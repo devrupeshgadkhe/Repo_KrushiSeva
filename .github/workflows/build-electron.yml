@@ -1,0 +1,83 @@
+name: Auto Build Windows (.exe) on Push
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Windows .EXE & Auto-Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Build Windows .EXE Installer
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract App Version
+        id: get_version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Publish .EXE to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: "Krushi Seva ERP v${{ steps.get_version.outputs.version }}"
+          body: |
+            ## कृषी सेवा केंद्र ERP - Windows Desktop App (.exe)
+            
+            हे व्हर्जन Google AI Studio मधून कोड पुश केल्यावर स्वयंचलितपणे (Automated) तयार करण्यात आले आहे.
+            
+            - **आवृत्ती (Version):** v${{ steps.get_version.outputs.version }}
+            - **कमिट (Commit):** `${{ github.sha }}`
+            - **प्लॅटफॉर्म:** Windows 10/11 (64-bit)
+            
+            ### डाउनलोड आणि इन्स्टॉलेशन:
+            खालील **`Krushi Seva ERP Setup ${{ steps.get_version.outputs.version }}.exe`** फाईल डाउनलोड करा आणि आपल्या संगणकावर इन्स्टॉल करा.
+          files: |
+            release/*.exe
+            release/latest.yml
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload .EXE as GitHub Actions Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: KrushiSevaERP-Windows-Setup-v${{ steps.get_version.outputs.version }}
+          path: |
+            release/*.exe
+            release/latest.yml
+          retention-days: 30

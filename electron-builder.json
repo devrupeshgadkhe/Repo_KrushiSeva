@@ -1,0 +1,40 @@
+{
+  "appId": "com.krushiseva.erp",
+  "productName": "Krushi Seva ERP",
+  "copyright": "Copyright © 2026 Rupesh Gadkhe",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "icon": "public/icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Krushi Seva ERP",
+    "installerIcon": "public/icon.png",
+    "uninstallerIcon": "public/icon.png",
+    "uninstallDisplayName": "Krushi Seva ERP"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "devrupeshgadkhe",
+    "repo": "rep_KrushiSevaERP",
+    "private": false
+  }
+}

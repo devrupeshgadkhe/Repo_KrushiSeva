@@ -1,0 +1,6 @@
+{
+  "name": "Krushi Seva ERP",
+  "description": "Agricultural Input Store Management System - Complete offline-first ERP for Krushi Seva Kendra, fertilizers, seeds, pesticides, inventory, billing, and khata credit.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
