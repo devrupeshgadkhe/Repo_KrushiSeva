@@ -17,6 +17,7 @@ import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
 import { PrintInvoiceModal } from '../components/common/PrintInvoiceModal';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface SalesRegisterProps {
   currentLang: AppLanguage;
@@ -24,6 +25,7 @@ interface SalesRegisterProps {
 }
 
 export const SalesRegister: React.FC<SalesRegisterProps> = ({ currentLang, onRefreshData }) => {
+  const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
 
   const [sales, setSales] = useState<Sale[]>([]);
@@ -71,7 +73,7 @@ export const SalesRegister: React.FC<SalesRegisterProps> = ({ currentLang, onRef
   const confirmCancelSale = async () => {
     if (!cancelModalSale) return;
     if (!cancelReason.trim()) {
-      alert(isMr ? 'कृपया बिल रद्द करण्याचे कारण प्रविष्ट करा.' : 'Please enter the cancellation reason.');
+      showToast(isMr ? 'कृपया बिल रद्द करण्याचे कारण प्रविष्ट करा.' : 'Please enter the cancellation reason.', 'warning');
       return;
     }
 
@@ -80,9 +82,9 @@ export const SalesRegister: React.FC<SalesRegisterProps> = ({ currentLang, onRef
       setCancelModalSale(null);
       loadSales();
       onRefreshData?.();
-      alert(isMr ? 'पावती यशस्वीरित्या रद्द करण्यात आली.' : 'Invoice cancelled successfully.');
+      showToast(isMr ? 'पावती यशस्वीरित्या रद्द करण्यात आली.' : 'Invoice cancelled successfully.', 'success');
     } catch (e: any) {
-      alert(e.message || (isMr ? 'पावती रद्द करताना त्रुटी आली.' : 'Error cancelling sale.'));
+      showToast(e.message || (isMr ? 'पावती रद्द करताना त्रुटी आली.' : 'Error cancelling sale.'), 'error');
     }
   };
 

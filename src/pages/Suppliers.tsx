@@ -15,6 +15,7 @@ import { AppLanguage, Supplier, LedgerEntry, PaymentMode } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface SuppliersProps {
   currentLang: AppLanguage;
@@ -23,6 +24,7 @@ interface SuppliersProps {
 }
 
 export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData, preselectedId }) => {
+  const { showToast } = useFeedback();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -107,7 +109,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
   const handleSaveSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !company.trim()) {
-      alert(currentLang === 'mr' ? 'कृपया संपर्क व्यक्ती व कंपनीचे नाव भरा.' : 'Please enter contact person and company name.');
+      showToast(currentLang === 'mr' ? 'कृपया संपर्क व्यक्ती व कंपनीचे नाव भरा.' : 'Please enter contact person and company name.', 'warning');
       return;
     }
 
@@ -124,21 +126,23 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
 
       if (editingSupplier) {
         await dbService.updateSupplier(editingSupplier.id, payload);
+        showToast(currentLang === 'mr' ? 'पुरवठादार माहिती अद्यतनित केली.' : 'Supplier updated successfully.', 'success');
       } else {
         await dbService.createSupplier(payload);
+        showToast(currentLang === 'mr' ? 'नवीन पुरवठादार नोंदवला गेला.' : 'New supplier added successfully.', 'success');
       }
 
       setShowModal(false);
       loadSuppliers();
       onRefreshData?.();
     } catch (err: any) {
-      alert(err.message || (currentLang === 'mr' ? 'पुरवठादार माहिती साठवताना त्रुटी आली.' : 'Error saving supplier.'));
+      showToast(err.message || (currentLang === 'mr' ? 'पुरवठादार माहिती साठवताना त्रुटी आली.' : 'Error saving supplier.'), 'error');
     }
   };
 
   const handleRecordPayment = async () => {
     if (!selectedSupplier || payAmount <= 0) {
-      alert(currentLang === 'mr' ? 'कृपया योग्य रक्कम प्रविष्ट करा.' : 'Please enter a valid payment amount.');
+      showToast(currentLang === 'mr' ? 'कृपया योग्य रक्कम प्रविष्ट करा.' : 'Please enter a valid payment amount.', 'warning');
       return;
     }
 
@@ -161,9 +165,9 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
       setLedgerEntries(ledger);
       loadSuppliers();
       onRefreshData?.();
-      alert(currentLang === 'mr' ? 'पुरवठादार देयक नोंद यशस्वीरित्या पूर्ण झाली.' : 'Supplier payment recorded successfully.');
+      showToast(currentLang === 'mr' ? 'पुरवठादार देयक नोंद यशस्वीरित्या पूर्ण झाली.' : 'Supplier payment recorded successfully.', 'success');
     } catch (err: any) {
-      alert(err.message || (currentLang === 'mr' ? 'पेमेंट नोंदवताना त्रुटी आली.' : 'Error recording supplier payment.'));
+      showToast(err.message || (currentLang === 'mr' ? 'पेमेंट नोंदवताना त्रुटी आली.' : 'Error recording supplier payment.'), 'error');
     }
   };
 

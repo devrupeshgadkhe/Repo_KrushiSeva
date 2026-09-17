@@ -56,6 +56,24 @@ export const dbService = {
 
   async saveProduct(product: Partial<Product>, userName = 'Admin'): Promise<number> {
     await sqliteEngine.getDb();
+    const cleanBrand = (product.brand?.trim() || product.company?.trim() || 'General');
+    const cleanCompany = (product.company?.trim() || product.brand?.trim() || cleanBrand);
+    const cleanName = product.name?.trim() || 'Product';
+    const cleanNameMr = product.name_mr?.trim() || cleanName;
+    const cleanNameHi = product.name_hi?.trim() || cleanName;
+    const cleanCategory = product.category || 'Fertilizers';
+    const cleanUnit = product.unit || 'Bags';
+    const cleanPackSize = product.pack_size?.trim() || '1';
+    const cleanHsn = product.hsn_code?.trim() || '0000';
+    const cleanPurchase = Number(product.purchase_rate) || 0;
+    const cleanMrp = Number(product.mrp) || 0;
+    const cleanSelling = Number(product.selling_rate) || 0;
+    const cleanDealer = Number(product.dealer_rate) || 0;
+    const cleanGst = Number(product.gst_rate) || 0;
+    const cleanMinStock = Number(product.min_stock ?? product.low_stock_alert ?? 10);
+    const cleanReorder = Number(product.reorder_level ?? product.low_stock_alert ?? 15);
+    const cleanProductCode = product.product_code?.trim() || `PRD-${Math.floor(1000 + Math.random() * 9000)}`;
+
     if (product.id) {
       sqliteEngine.run(
         `UPDATE products SET 
@@ -67,15 +85,15 @@ export const dbService = {
           cib_registration_no = ?, description = ?
         WHERE id = ?`,
         [
-          product.product_code, product.barcode || '', product.name, product.name_mr || '', product.name_hi || '', product.category,
-          product.subcategory || '', product.brand, product.company || '', product.unit, product.pack_size, product.mrp,
-          product.purchase_rate, product.selling_rate, product.dealer_rate || 0, product.gst_rate, product.hsn_code,
-          product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, product.min_stock, product.reorder_level,
+          cleanProductCode, product.barcode || '', cleanName, cleanNameMr, cleanNameHi, cleanCategory,
+          product.subcategory || '', cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
+          cleanPurchase, cleanSelling, cleanDealer, cleanGst, cleanHsn,
+          product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, cleanMinStock, cleanReorder,
           product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
           product.cib_registration_no || '', product.description || '', product.id
         ]
       );
-      this.logAudit(userName, 'UPDATE', 'Product', String(product.id), `Updated product ${product.name}`);
+      this.logAudit(userName, 'UPDATE', 'Product', String(product.id), `Updated product ${cleanName}`);
       return product.id;
     } else {
       const res = sqliteEngine.run(
@@ -86,15 +104,15 @@ export const dbService = {
           seed_variety, toxicity_class, cib_registration_no, description, active, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
         [
-          product.product_code, product.barcode || '', product.name, product.name_mr || '', product.name_hi || '', product.category,
-          product.subcategory || '', product.brand, product.company || '', product.unit, product.pack_size, product.mrp,
-          product.purchase_rate, product.selling_rate, product.dealer_rate || 0, product.gst_rate, product.hsn_code,
-          product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, product.min_stock || 10, product.reorder_level || 15,
+          cleanProductCode, product.barcode || '', cleanName, cleanNameMr, cleanNameHi, cleanCategory,
+          product.subcategory || '', cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
+          cleanPurchase, cleanSelling, cleanDealer, cleanGst, cleanHsn,
+          product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, cleanMinStock, cleanReorder,
           product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
           product.cib_registration_no || '', product.description || ''
         ]
       );
-      this.logAudit(userName, 'CREATE', 'Product', String(res.lastInsertRowid), `Created product ${product.name}`);
+      this.logAudit(userName, 'CREATE', 'Product', String(res.lastInsertRowid), `Created product ${cleanName}`);
       return res.lastInsertRowid;
     }
   },

@@ -29,6 +29,7 @@ import { BackupHealth } from './pages/BackupHealth';
 import { Settings } from './pages/Settings';
 import { BusinessProfile } from './pages/BusinessProfile';
 import { UpdateNotification } from './components/common/UpdateNotification';
+import { FeedbackProvider, feedback } from './components/common/FeedbackContext';
 
 export default function App() {
   // App states
@@ -206,16 +207,17 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-100 overflow-hidden font-sans antialiased text-slate-900">
-      {/* Top Desktop Title Bar */}
-      <TitleBar
-        currentLang={currentLang}
-        onLanguageChange={handleLanguageChange}
-        currentUser={currentUser}
-        onLogout={() => alert(currentLang === 'mr' ? 'सध्याचे वापरकर्ता सत्र सुरक्षित आहे.' : 'User session is active and secure.')}
-        onOpenGlobalSearch={() => setIsSearchOpen(true)}
-        cashInHand={cashInHand}
-      />
+    <FeedbackProvider currentLang={currentLang}>
+      <div className="h-screen w-screen flex flex-col bg-slate-100 overflow-hidden font-sans antialiased text-slate-900">
+        {/* Top Desktop Title Bar */}
+        <TitleBar
+          currentLang={currentLang}
+          onLanguageChange={handleLanguageChange}
+          currentUser={currentUser}
+          onLogout={() => feedback.toast(currentLang === 'mr' ? 'सध्याचे वापरकर्ता सत्र सुरक्षित आहे.' : 'User session is active and secure.', 'info')}
+          onOpenGlobalSearch={() => setIsSearchOpen(true)}
+          cashInHand={cashInHand}
+        />
 
       {/* Main Workspace Body */}
       <div className="flex-1 flex overflow-hidden">
@@ -351,5 +353,6 @@ export default function App() {
       {/* Desktop Auto-Update Notification Banner */}
       <UpdateNotification currentLang={currentLang} />
     </div>
+    </FeedbackProvider>
   );
 }

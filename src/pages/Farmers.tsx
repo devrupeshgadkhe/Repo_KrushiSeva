@@ -18,6 +18,7 @@ import { AppLanguage, Customer, LedgerEntry, PaymentMode } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface FarmersProps {
   currentLang: AppLanguage;
@@ -26,6 +27,7 @@ interface FarmersProps {
 }
 
 export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, preselectedId }) => {
+  const { showToast } = useFeedback();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState('');
   const [villageFilter, setVillageFilter] = useState('All');
@@ -118,7 +120,7 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
   const handleSaveFarmer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !mobile.trim()) {
-      alert(currentLang === 'mr' ? 'कृपया नाव व मोबाईल नंबर भरा.' : 'Please enter name and mobile number.');
+      showToast(currentLang === 'mr' ? 'कृपया नाव व मोबाईल नंबर भरा.' : 'Please enter name and mobile number.', 'warning');
       return;
     }
 
@@ -137,22 +139,24 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
 
       if (editingFarmer) {
         await dbService.updateCustomer(editingFarmer.id, payload);
+        showToast(currentLang === 'mr' ? 'शेतकरी माहिती अद्यतनित केली.' : 'Customer updated successfully.', 'success');
       } else {
         await dbService.createCustomer(payload);
+        showToast(currentLang === 'mr' ? 'नवीन शेतकरी खाते तयार केले.' : 'New customer added successfully.', 'success');
       }
 
       setShowFarmerModal(false);
       loadCustomers();
       onRefreshData?.();
     } catch (err: any) {
-      alert(err.message || (currentLang === 'mr' ? 'शेतकरी माहिती साठवताना त्रुटी आली.' : 'Error saving customer.'));
+      showToast(err.message || (currentLang === 'mr' ? 'शेतकरी माहिती साठवताना त्रुटी आली.' : 'Error saving customer.'), 'error');
     }
   };
 
   // Record Khata Payment from farmer
   const handleRecordPayment = async () => {
     if (!selectedFarmer || paymentAmount <= 0) {
-      alert(currentLang === 'mr' ? 'कृपया योग्य रक्कम प्रविष्ट करा.' : 'Please enter a valid amount.');
+      showToast(currentLang === 'mr' ? 'कृपया योग्य रक्कम प्रविष्ट करा.' : 'Please enter a valid amount.', 'warning');
       return;
     }
 
@@ -176,9 +180,9 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
       setLedgerEntries(ledger);
       loadCustomers();
       onRefreshData?.();
-      alert(currentLang === 'mr' ? 'उधारी जमा यशस्वीरित्या नोंदवली गेली.' : 'Payment successfully recorded.');
+      showToast(currentLang === 'mr' ? 'उधारी जमा यशस्वीरित्या नोंदवली गेली.' : 'Payment successfully recorded.', 'success');
     } catch (err: any) {
-      alert(err.message || (currentLang === 'mr' ? 'जमा नोंदवताना त्रुटी आली.' : 'Error recording payment.'));
+      showToast(err.message || (currentLang === 'mr' ? 'जमा नोंदवताना त्रुटी आली.' : 'Error recording payment.'), 'error');
     }
   };
 

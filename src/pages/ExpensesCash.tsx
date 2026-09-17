@@ -16,6 +16,7 @@ import { AppLanguage, Expense, CashTransaction } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface ExpensesCashProps {
   currentLang: AppLanguage;
@@ -23,6 +24,7 @@ interface ExpensesCashProps {
 }
 
 export const ExpensesCash: React.FC<ExpensesCashProps> = ({ currentLang, onRefreshData }) => {
+  const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
 
   const [cashBalance, setCashBalance] = useState(0);
@@ -77,7 +79,7 @@ export const ExpensesCash: React.FC<ExpensesCashProps> = ({ currentLang, onRefre
   const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (expAmount <= 0) {
-      alert(isMr ? 'कृपया योग्य रक्कम भरा.' : 'Please enter a valid amount.');
+      showToast(isMr ? 'कृपया योग्य रक्कम भरा.' : 'Please enter a valid amount.', 'warning');
       return;
     }
 
@@ -98,9 +100,9 @@ export const ExpensesCash: React.FC<ExpensesCashProps> = ({ currentLang, onRefre
       setExpDescription('');
       loadData();
       onRefreshData?.();
-      alert(isMr ? 'खर्च यशस्वीरित्या नोंदवला गेला.' : 'Expense recorded successfully.');
+      showToast(isMr ? 'खर्च यशस्वीरित्या नोंदवला गेला.' : 'Expense recorded successfully.', 'success');
     } catch (err: any) {
-      alert(err.message || (isMr ? 'खर्च नोंदवताना त्रुटी आली.' : 'Error recording expense.'));
+      showToast(err.message || (isMr ? 'खर्च नोंदवताना त्रुटी आली.' : 'Error recording expense.'), 'error');
     }
   };
 

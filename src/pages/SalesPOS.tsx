@@ -33,6 +33,7 @@ import { getTranslation } from '../i18n';
 import { formatINR, calculateLineGst, formatDate } from '../utils/formatters';
 import { dbService } from '../services/api';
 import { PrintInvoiceModal } from '../components/common/PrintInvoiceModal';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface SalesPOSProps {
   currentLang: AppLanguage;
@@ -40,6 +41,7 @@ interface SalesPOSProps {
 }
 
 export const SalesPOS: React.FC<SalesPOSProps> = ({ currentLang, onSaleCompleted }) => {
+  const { showToast, showConfirm } = useFeedback();
   const isMr = currentLang === 'mr';
 
   // Master data
@@ -809,12 +811,21 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({ currentLang, onSaleCompleted
             <button
               type="button"
               onClick={() => {
-                if (items.length > 0 && confirm(isMr ? 'चालू पावती रद्द करायची आहे का?' : 'Discard current bill?')) {
-                  setItems([]);
-                  setSelectedCustomer(null);
-                  setPaidAmount(0);
-                  setNotes('');
-                }
+                if (items.length === 0) return;
+                showConfirm({
+                  title: isMr ? 'पावती रद्द करा' : 'Discard Bill',
+                  message: isMr ? 'चालू पावती रद्द करायची आहे का? सर्व निवडलेली उत्पादने हटवली जातील.' : 'Discard current bill? All selected items will be removed.',
+                  confirmText: isMr ? 'होय, रद्द करा' : 'Yes, Discard',
+                  cancelText: isMr ? 'मागे जा' : 'Cancel',
+                  isDanger: true,
+                  onConfirm: () => {
+                    setItems([]);
+                    setSelectedCustomer(null);
+                    setPaidAmount(0);
+                    setNotes('');
+                    showToast(isMr ? 'पावती रद्द केली.' : 'Bill discarded.', 'info');
+                  }
+                });
               }}
               className="w-full py-1.5 text-center text-[11px] text-slate-500 hover:text-rose-600 cursor-pointer font-medium"
             >

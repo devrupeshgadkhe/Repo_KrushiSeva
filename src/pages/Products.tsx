@@ -17,6 +17,7 @@ import { Product, ProductCategory, AppLanguage } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface ProductsProps {
   currentLang: AppLanguage;
@@ -24,6 +25,7 @@ interface ProductsProps {
 }
 
 export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }) => {
+  const { showToast, showConfirm } = useFeedback();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -37,6 +39,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
   const [productCode, setProductCode] = useState('');
   const [name, setName] = useState('');
   const [nameMr, setNameMr] = useState('');
+  const [brand, setBrand] = useState('');
   const [category, setCategory] = useState<ProductCategory>('Fertilizers');
   const [hsnCode, setHsnCode] = useState('');
   const [unit, setUnit] = useState('Bags');
@@ -71,6 +74,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
     setProductCode('');
     setName('');
     setNameMr('');
+    setBrand('');
     setCategory('Fertilizers');
     setHsnCode('');
     setUnit('Bags');
@@ -91,6 +95,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
     setProductCode(p.product_code);
     setName(p.name);
     setNameMr(p.name_mr || '');
+    setBrand(p.brand || p.company || '');
     setCategory(p.category);
     setHsnCode(p.hsn_code);
     setUnit(p.unit);
@@ -109,7 +114,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      alert(currentLang === 'mr' ? 'कृपया उत्पादनाचे नाव भरा.' : 'Please enter product name.');
+      showToast(currentLang === 'mr' ? 'कृपया उत्पादनाचे नाव भरा.' : 'Please enter product name.', 'warning');
       return;
     }
 
@@ -117,16 +122,20 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
       const payload: Partial<Product> = {
         product_code: productCode.trim() || `PRD-${Math.floor(1000 + Math.random() * 9000)}`,
         name: name.trim(),
-        name_mr: nameMr.trim() || undefined,
+        name_mr: nameMr.trim() || name.trim(),
+        brand: brand.trim() || 'General',
+        company: brand.trim() || 'General',
         category,
-        hsn_code: hsnCode.trim(),
-        unit,
-        pack_size: packSize.trim(),
-        purchase_rate: purchaseRate,
-        mrp,
-        selling_rate: sellingRate,
-        gst_rate: gstRate,
-        low_stock_alert: lowStockAlert,
+        hsn_code: hsnCode.trim() || '0000',
+        unit: unit || 'Bags',
+        pack_size: packSize.trim() || '1',
+        purchase_rate: Number(purchaseRate) || 0,
+        mrp: Number(mrp) || 0,
+        selling_rate: Number(sellingRate) || 0,
+        gst_rate: Number(gstRate) || 0,
+        low_stock_alert: Number(lowStockAlert) || 10,
+        min_stock: Number(lowStockAlert) || 10,
+        reorder_level: Number(lowStockAlert) ? Number(lowStockAlert) + 5 : 15,
         barcode: barcode.trim() || undefined,
         technical_name: technicalName.trim() || undefined,
         toxicity_color: toxicityColor || undefined,
@@ -134,16 +143,41 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
 
       if (editingProduct) {
         await dbService.updateProduct(editingProduct.id, payload);
+        showToast(currentLang === 'mr' ? 'उत्पादन माहिती यशस्वीरित्या अद्यतनित केली.' : 'Product updated successfully.', 'success');
       } else {
         await dbService.createProduct(payload);
+        showToast(currentLang === 'mr' ? 'नवीन उत्पादन यशस्वीरित्या जोडले.' : 'New product created successfully.', 'success');
       }
 
       setShowModal(false);
       loadProducts();
       onRefreshData?.();
     } catch (err: any) {
-      alert(err.message || (currentLang === 'mr' ? 'उत्पादन साठवताना अडचण आली.' : 'Error saving product.'));
+      console.error('Save product error:', err);
+      showToast(err.message || (currentLang === 'mr' ? 'उत्पादन साठवताना अडचण आली.' : 'Error saving product.'), 'error');
     }
+  };
+
+  const handleDeleteProduct = (p: Product) => {
+    showConfirm({
+      title: currentLang === 'mr' ? 'उत्पादन निष्क्रिय करा' : 'Deactivate Product',
+      message: currentLang === 'mr'
+        ? `आपण खात्रीपूर्वक "${p.name}" हे उत्पादन निष्क्रिय करू इच्छिता?`
+        : `Are you sure you want to deactivate "${p.name}"?`,
+      confirmText: currentLang === 'mr' ? 'होय, निष्क्रिय करा' : 'Yes, Deactivate',
+      cancelText: currentLang === 'mr' ? 'रद्द करा' : 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await dbService.deactivateProduct(p.id);
+          showToast(currentLang === 'mr' ? 'उत्पादन निष्क्रिय केले.' : 'Product deactivated.', 'success');
+          loadProducts();
+          onRefreshData?.();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to deactivate product', 'error');
+        }
+      }
+    });
   };
 
   const handleExportCSV = () => {
@@ -300,13 +334,22 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
                       </td>
                       <td className="p-3 text-right font-mono text-slate-600">{p.gst_rate}%</td>
                       <td className="p-3 text-center">
-                        <button
-                          onClick={() => handleOpenEdit(p)}
-                          className="p-1 rounded text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 cursor-pointer"
-                          title={getTranslation('edit', currentLang)}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleOpenEdit(p)}
+                            className="p-1 rounded text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 cursor-pointer"
+                            title={getTranslation('edit', currentLang)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProduct(p)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            title={currentLang === 'mr' ? 'निष्क्रिय करा' : 'Deactivate'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -367,7 +410,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    {getTranslation('category', currentLang)} *
+                    {categoryOptions.find(c => c.value === category)?.[currentLang === 'mr' ? 'mr' : 'en']} {currentLang === 'mr' ? 'प्रवर्ग' : 'Category'} *
                   </label>
                   <select
                     value={category}
@@ -380,6 +423,19 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {currentLang === 'mr' ? 'ब्रँड / कंपनी' : 'Brand / Company'}
+                  </label>
+                  <input
+                    type="text"
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    placeholder={currentLang === 'mr' ? 'उदा. महायको, बायर, आरसीएफ' : 'e.g. Bayer, Mahyco, RCF'}
+                    className="w-full p-2 border border-slate-300 rounded focus:outline-emerald-600"
+                  />
                 </div>
 
                 <div>

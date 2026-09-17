@@ -30,12 +30,14 @@ import {
 import { getTranslation } from '../i18n';
 import { formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface ComplianceProps {
   currentLang: AppLanguage;
 }
 
 export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
+  const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
 
   const [activeTab, setActiveTab] = useState<'licences' | 'fertilizer' | 'seeds' | 'pesticides'>('licences');
@@ -116,9 +118,9 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
       });
       setEditingLicence(null);
       loadData();
-      alert(isMr ? 'परवाना तपशील अद्यतनित केले गेले.' : 'Licence updated successfully.');
+      showToast(isMr ? 'परवाना तपशील अद्यतनित केले गेले.' : 'Licence updated successfully.', 'success');
     } catch (err: any) {
-      alert(err.message || (isMr ? 'परवाना अद्यतनित करताना त्रुटी आली.' : 'Error updating licence.'));
+      showToast(err.message || (isMr ? 'परवाना अद्यतनित करताना त्रुटी आली.' : 'Error updating licence.'), 'error');
     }
   };
 

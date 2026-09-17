@@ -24,6 +24,7 @@ import {
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface PurchasesProps {
   currentLang: AppLanguage;
@@ -31,6 +32,7 @@ interface PurchasesProps {
 }
 
 export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCompleted }) => {
+  const { showToast } = useFeedback();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -97,19 +99,19 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
 
   const handleAddItem = () => {
     if (!selectedProdId) {
-      alert(currentLang === 'mr' ? 'कृपया उत्पादन निवडा.' : 'Please select a product.');
+      showToast(currentLang === 'mr' ? 'कृपया उत्पादन निवडा.' : 'Please select a product.', 'warning');
       return;
     }
     if (!batchNo.trim()) {
-      alert(currentLang === 'mr' ? 'कृपया बॅच क्रमांक टाका.' : 'Please enter batch number.');
+      showToast(currentLang === 'mr' ? 'कृपया बॅच क्रमांक टाका.' : 'Please enter batch number.', 'warning');
       return;
     }
     if (!expDate) {
-      alert(currentLang === 'mr' ? 'कृपया मुदत समाप्ती तारीख टाका.' : 'Please enter expiry date.');
+      showToast(currentLang === 'mr' ? 'कृपया मुदत समाप्ती तारीख टाका.' : 'Please enter expiry date.', 'warning');
       return;
     }
     if (qty <= 0 || purchaseRate <= 0) {
-      alert(currentLang === 'mr' ? 'कृपया योग्य संख्या व खरेदी दर भरा.' : 'Please enter valid quantity and purchase rate.');
+      showToast(currentLang === 'mr' ? 'कृपया योग्य संख्या व खरेदी दर भरा.' : 'Please enter valid quantity and purchase rate.', 'warning');
       return;
     }
 
@@ -171,15 +173,15 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
 
   const handleSavePurchase = async () => {
     if (!selectedSupplierId) {
-      alert(currentLang === 'mr' ? 'कृपया पुरवठादार निवडा.' : 'Please select a supplier.');
+      showToast(currentLang === 'mr' ? 'कृपया पुरवठादार निवडा.' : 'Please select a supplier.', 'warning');
       return;
     }
     if (!supplierInvoiceNo.trim()) {
-      alert(currentLang === 'mr' ? 'कृपया पुरवठादार बिल क्रमांक टाका.' : 'Please enter supplier invoice number.');
+      showToast(currentLang === 'mr' ? 'कृपया पुरवठादार बिल क्रमांक टाका.' : 'Please enter supplier invoice number.', 'warning');
       return;
     }
     if (items.length === 0) {
-      alert(currentLang === 'mr' ? 'कृपया किमान एक उत्पादन जोडा.' : 'Please add at least 1 product item.');
+      showToast(currentLang === 'mr' ? 'कृपया किमान एक उत्पादन जोडा.' : 'Please add at least 1 product item.', 'warning');
       return;
     }
 
@@ -210,7 +212,7 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
       };
 
       await dbService.createPurchase(payload);
-      alert(currentLang === 'mr' ? 'खरेदी नोंद यशस्वीरित्या झाली आणि साठा वाढवला गेला.' : 'Purchase entry saved successfully and stock updated.');
+      showToast(currentLang === 'mr' ? 'खरेदी नोंद यशस्वीरित्या झाली आणि साठा वाढवला गेला.' : 'Purchase entry saved successfully and stock updated.', 'success');
 
       // Reset form
       setItems([]);
@@ -221,7 +223,7 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
       loadData();
       onPurchaseCompleted?.();
     } catch (err: any) {
-      alert(err.message || (currentLang === 'mr' ? 'खरेदी नोंद साठवताना त्रुटी आली.' : 'Error saving purchase entry.'));
+      showToast(err.message || (currentLang === 'mr' ? 'खरेदी नोंद साठवताना त्रुटी आली.' : 'Error saving purchase entry.'), 'error');
     }
   };
 

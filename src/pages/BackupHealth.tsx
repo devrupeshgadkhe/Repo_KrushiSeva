@@ -13,6 +13,7 @@ import {
 import { AppLanguage } from '../types';
 import { getTranslation } from '../i18n';
 import { exportDatabaseFile, restoreDatabaseFromFile, checkIntegrity } from '../db/sqliteEngine';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface BackupHealthProps {
   currentLang: AppLanguage;
@@ -20,6 +21,7 @@ interface BackupHealthProps {
 }
 
 export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefreshData }) => {
+  const { showToast, showConfirm } = useFeedback();
   const [integrityStatus, setIntegrityStatus] = useState<string>('checking');
   const [restoring, setRestoring] = useState(false);
   const [backupSuccess, setBackupSuccess] = useState(false);
@@ -42,9 +44,10 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
     try {
       await exportDatabaseFile();
       setBackupSuccess(true);
+      showToast(currentLang === 'mr' ? 'डेटाबेस बॅकअप यशस्वीरित्या डाऊनलोड झाला.' : 'Database backup downloaded successfully.', 'success');
       setTimeout(() => setBackupSuccess(false), 4000);
     } catch (err: any) {
-      alert((currentLang === 'mr' ? 'बॅकअप डाऊनलोड अयशस्वी: ' : 'Backup failed: ') + err.message);
+      showToast((currentLang === 'mr' ? 'बॅकअप डाऊनलोड अयशस्वी: ' : 'Backup failed: ') + err.message, 'error');
     }
   };
 
@@ -52,20 +55,27 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm(getTranslation('restore_confirm', currentLang))) {
-      return;
-    }
-
-    setRestoring(true);
-    try {
-      await restoreDatabaseFromFile(file);
-      alert(getTranslation('restore_success', currentLang));
-      window.location.reload();
-    } catch (err: any) {
-      alert((currentLang === 'mr' ? 'रिस्टोअर अयशस्वी: ' : 'Restore failed: ') + err.message);
-    } finally {
-      setRestoring(false);
-    }
+    showConfirm({
+      title: currentLang === 'mr' ? 'डेटाबेस पूर्ववत (Restore) करा?' : 'Restore Database?',
+      message: getTranslation('restore_confirm', currentLang),
+      confirmText: currentLang === 'mr' ? 'होय, रिस्टोअर करा' : 'Yes, Restore',
+      cancelText: currentLang === 'mr' ? 'रद्द करा' : 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        setRestoring(true);
+        try {
+          await restoreDatabaseFromFile(file);
+          showToast(getTranslation('restore_success', currentLang), 'success');
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        } catch (err: any) {
+          showToast((currentLang === 'mr' ? 'रिस्टोअर अयशस्वी: ' : 'Restore failed: ') + err.message, 'error');
+        } finally {
+          setRestoring(false);
+        }
+      }
+    });
   };
 
   return (

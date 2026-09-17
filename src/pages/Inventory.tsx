@@ -17,6 +17,7 @@ import { AppLanguage, ProductBatch } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface InventoryProps {
   currentLang: AppLanguage;
@@ -24,6 +25,7 @@ interface InventoryProps {
 }
 
 export const Inventory: React.FC<InventoryProps> = ({ currentLang, onRefreshData }) => {
+  const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
 
   const [batches, setBatches] = useState<ProductBatch[]>([]);
@@ -75,9 +77,9 @@ export const Inventory: React.FC<InventoryProps> = ({ currentLang, onRefreshData
       setAdjustBatch(null);
       loadBatches();
       onRefreshData?.();
-      alert(isMr ? 'साठा यशस्वीरित्या अद्यतनित केला.' : 'Stock adjusted successfully.');
+      showToast(isMr ? 'साठा यशस्वीरित्या अद्यतनित केला.' : 'Stock adjusted successfully.', 'success');
     } catch (err: any) {
-      alert(err.message || (isMr ? 'साठा अद्यतनित करताना त्रुटी आली.' : 'Error adjusting stock.'));
+      showToast(err.message || (isMr ? 'साठा अद्यतनित करताना त्रुटी आली.' : 'Error adjusting stock.'), 'error');
     }
   };
 

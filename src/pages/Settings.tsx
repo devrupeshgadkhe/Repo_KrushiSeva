@@ -18,6 +18,7 @@ import {
 import { AppLanguage, BusinessSettings, InvoiceSettings, User } from '../types';
 import { getTranslation } from '../i18n';
 import { dbService } from '../services/api';
+import { useFeedback } from '../components/common/FeedbackContext';
 
 interface SettingsProps {
   currentLang: AppLanguage;
@@ -25,6 +26,7 @@ interface SettingsProps {
 }
 
 export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved }) => {
+  const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
 
   const [activeTab, setActiveTab] = useState<'shop' | 'invoice' | 'users' | 'audit' | 'updates'>('shop');
@@ -183,10 +185,11 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
       });
 
       setSuccessMsg(isMr ? 'दुकानाची माहिती यशस्वीरित्या सेव्ह झाली.' : 'Business details saved successfully.');
+      showToast(isMr ? 'दुकानाची माहिती यशस्वीरित्या सेव्ह झाली.' : 'Business details saved successfully.', 'success');
       setTimeout(() => setSuccessMsg(''), 3000);
       onSettingsSaved?.();
     } catch (err: any) {
-      alert((isMr ? 'माहिती सेव्ह करताना त्रुटी आली: ' : 'Error saving business settings: ') + err.message);
+      showToast((isMr ? 'माहिती सेव्ह करताना त्रुटी आली: ' : 'Error saving business settings: ') + err.message, 'error');
     }
   };
 
@@ -205,10 +208,11 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
       });
 
       setSuccessMsg(isMr ? 'पावती प्रिंटिंग सेटिंग्ज यशस्वीरित्या सेव्ह झाली.' : 'Invoice settings saved successfully.');
+      showToast(isMr ? 'पावती प्रिंटिंग सेटिंग्ज यशस्वीरित्या सेव्ह झाली.' : 'Invoice settings saved successfully.', 'success');
       setTimeout(() => setSuccessMsg(''), 3000);
       onSettingsSaved?.();
     } catch (err: any) {
-      alert((isMr ? 'सेटिंग्ज सेव्ह करताना त्रुटी आली: ' : 'Error saving invoice settings: ') + err.message);
+      showToast((isMr ? 'सेटिंग्ज सेव्ह करताना त्रुटी आली: ' : 'Error saving invoice settings: ') + err.message, 'error');
     }
   };
 
