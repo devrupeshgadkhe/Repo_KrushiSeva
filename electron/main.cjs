@@ -32,7 +32,14 @@ function createWindow() {
   });
 
   // Smooth loading
+  const showFallback = setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  }, 3000);
+
   mainWindow.once('ready-to-show', () => {
+    clearTimeout(showFallback);
     mainWindow.show();
     // Check for updates shortly after launch if packaged
     if (app.isPackaged) {
@@ -42,6 +49,18 @@ function createWindow() {
         });
       }, 5000);
     }
+  });
+
+  // Enable F12 or Ctrl+Shift+I to toggle DevTools if ever needed
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[Electron] Failed to load URL: ${validatedURL} (${errorCode}: ${errorDescription})`);
   });
 
   // Open external links in default OS browser

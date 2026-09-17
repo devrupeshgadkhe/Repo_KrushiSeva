@@ -5,6 +5,13 @@ import { SEED_DATA_SQL } from './seedData';
 const DB_STORAGE_KEY = 'krushi_seva_erp_sqlite_db';
 const DB_VERSION = 1;
 
+function getSqlWasmUrl(): string {
+  if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+    return './sql-wasm.wasm';
+  }
+  return '/sql-wasm.wasm';
+}
+
 class SQLiteDatabaseManager {
   private db: Database | null = null;
   private isInitialized = false;
@@ -21,7 +28,7 @@ class SQLiteDatabaseManager {
   private async init(): Promise<Database> {
     try {
       const SQL = await initSqlJs({
-        locateFile: () => '/sql-wasm.wasm'
+        locateFile: () => getSqlWasmUrl()
       });
 
       // Try loading existing database from IndexedDB
@@ -165,7 +172,7 @@ class SQLiteDatabaseManager {
   }
 
   public async restoreDatabaseFromFile(fileData: Uint8Array): Promise<boolean> {
-    const SQL = await initSqlJs({ locateFile: () => '/sql-wasm.wasm' });
+    const SQL = await initSqlJs({ locateFile: () => getSqlWasmUrl() });
     const candidateDb = new SQL.Database(fileData);
     const integrity = this.runIntegrityCheck(candidateDb);
     if (integrity !== 'ok') {
@@ -189,7 +196,7 @@ class SQLiteDatabaseManager {
   }
 
   public async resetToSeedData(): Promise<void> {
-    const SQL = await initSqlJs({ locateFile: () => '/sql-wasm.wasm' });
+    const SQL = await initSqlJs({ locateFile: () => getSqlWasmUrl() });
     if (this.db) {
       this.db.close();
     }
