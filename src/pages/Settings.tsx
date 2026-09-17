@@ -803,7 +803,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
                 {isMr ? 'GitHub रिपॉझिटरी' : 'GitHub Repository'}
               </span>
               <div className="text-xs font-mono font-bold text-slate-800 truncate">
-                devrupeshgadkhe/rep_KrushiSevaERP
+                devrupeshgadkhe/Repo_KrushiSeva
               </div>
               <p className="text-[11px] text-slate-500">
                 {isMr ? 'GitHub Actions CI/CD जोडलेले' : 'Automated release provider'}

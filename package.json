@@ -7,7 +7,7 @@
   "author": "Rupesh Gadkhe <rpgadkhe123@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/devrupeshgadkhe/rep_KrushiSevaERP.git"
+    "url": "https://github.com/devrupeshgadkhe/Repo_KrushiSeva.git"
   },
   "main": "electron/main.cjs",
   "type": "module",
