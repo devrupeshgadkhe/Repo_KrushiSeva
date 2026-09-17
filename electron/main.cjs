@@ -22,7 +22,6 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: 'Krushi Seva ERP - कृषी सेवा केंद्र ERP',
-    icon: path.join(__dirname, '../public/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
