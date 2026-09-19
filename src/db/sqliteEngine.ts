@@ -16,6 +16,7 @@ class SQLiteDatabaseManager {
   private db: Database | null = null;
   private isInitialized = false;
   private initPromise: Promise<Database> | null = null;
+  private inTransaction = false;
 
   public async getDb(): Promise<Database> {
     if (this.db) return this.db;
@@ -146,21 +147,45 @@ class SQLiteDatabaseManager {
       lastInsertRowid = Number(lastIdRes[0].values[0][0]) || 0;
       changes = Number(lastIdRes[0].values[0][1]) || 0;
     }
-    // Schedule asynchronous persist
-    this.persist().catch(console.error);
+    // Schedule asynchronous persist only outside active transactions (transactions persist on commit)
+    if (!this.inTransaction) {
+      this.persist().catch(console.error);
+    }
     return { lastInsertRowid, changes };
   }
 
   public transaction<T>(callback: () => T): T {
     if (!this.db) throw new Error('Database not initialized');
-    this.db.run('BEGIN TRANSACTION;');
+
+    // If already in an active transaction, execute callback directly to prevent nested transaction crash
+    if (this.inTransaction) {
+      return callback();
+    }
+
+    this.inTransaction = true;
+    try {
+      this.db.run('BEGIN TRANSACTION;');
+    } catch (beginErr) {
+      this.inTransaction = false;
+      throw beginErr;
+    }
+
     try {
       const result = callback();
       this.db.run('COMMIT;');
+      this.inTransaction = false;
       this.persist().catch(console.error);
       return result;
     } catch (error) {
-      this.db.run('ROLLBACK;');
+      try {
+        this.db.run('ROLLBACK;');
+      } catch (rollbackErr) {
+        // SQLite may have already automatically rolled back on the error, or no transaction was active.
+        // We log a warning but NEVER allow rollback failure to mask the original underlying error!
+        console.warn('Rollback warning (transaction may have already aborted):', rollbackErr);
+      } finally {
+        this.inTransaction = false;
+      }
       throw error;
     }
   }

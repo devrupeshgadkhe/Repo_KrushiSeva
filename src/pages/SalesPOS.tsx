@@ -437,10 +437,13 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
       const salePayload = {
         invoice_no: editingInvoiceNo || '',
         invoice_date: invoiceDate,
+        doc_date: invoiceDate,
         customer_id: selectedCustomer?.id || 0,
         customer_name: customerName,
         customer_mobile: customerMobile,
         customer_village: customerVillage,
+        customer_aadhar: selectedCustomer?.aadhar_no || '',
+        previous_balance: selectedCustomer?.current_balance || 0,
         payment_mode: paymentMode,
         subtotal,
         discount_amount: totalDiscount,

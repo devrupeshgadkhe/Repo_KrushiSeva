@@ -99,12 +99,17 @@ function downloadDirectAsset(url, targetVersion) {
 }
 
 function createWindow() {
+  const iconPath = fs.existsSync(path.join(__dirname, 'icon.ico')) 
+    ? path.join(__dirname, 'icon.ico') 
+    : path.join(__dirname, 'icon.png');
+
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 850,
     minWidth: 1024,
     minHeight: 700,
     title: 'Krushi Seva ERP - कृषी सेवा केंद्र ERP',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,

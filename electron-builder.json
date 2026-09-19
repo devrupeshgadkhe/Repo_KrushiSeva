@@ -11,6 +11,7 @@
     "package.json"
   ],
   "win": {
+    "icon": "electron/icon.ico",
     "target": [
       {
         "target": "nsis",
@@ -26,7 +27,9 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "Krushi Seva ERP",
-    "uninstallDisplayName": "Krushi Seva ERP"
+    "uninstallDisplayName": "Krushi Seva ERP",
+    "installerIcon": "electron/icon.ico",
+    "uninstallerIcon": "electron/icon.ico"
   },
   "publish": {
     "provider": "github",
