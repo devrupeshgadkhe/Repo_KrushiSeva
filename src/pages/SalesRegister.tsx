@@ -10,7 +10,9 @@ import {
   AlertCircle,
   Eye,
   CheckCircle2,
-  XCircle
+  XCircle,
+  Plus,
+  Edit3
 } from 'lucide-react';
 import { AppLanguage, Sale, BusinessSettings, InvoiceSettings } from '../types';
 import { getTranslation } from '../i18n';
@@ -22,9 +24,16 @@ import { useFeedback } from '../components/common/FeedbackContext';
 interface SalesRegisterProps {
   currentLang: AppLanguage;
   onRefreshData?: () => void;
+  onNewSale?: () => void;
+  onEditSale?: (saleId: number) => void;
 }
 
-export const SalesRegister: React.FC<SalesRegisterProps> = ({ currentLang, onRefreshData }) => {
+export const SalesRegister: React.FC<SalesRegisterProps> = ({ 
+  currentLang, 
+  onRefreshData,
+  onNewSale,
+  onEditSale
+}) => {
   const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
 
@@ -135,6 +144,16 @@ export const SalesRegister: React.FC<SalesRegisterProps> = ({ currentLang, onRef
           </div>
 
           <div className="flex items-center gap-2">
+            {onNewSale && (
+              <button
+                type="button"
+                onClick={onNewSale}
+                className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{isMr ? '+ नवीन विक्री बिल (POS)' : '+ New Sale Bill (POS)'}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleExportCSV}
@@ -283,11 +302,21 @@ export const SalesRegister: React.FC<SalesRegisterProps> = ({ currentLang, onRef
                         >
                           <Printer className="w-4 h-4" />
                         </button>
+                        {sale.status === 'Completed' && onEditSale && (
+                          <button
+                            type="button"
+                            onClick={() => onEditSale(sale.id)}
+                            title={isMr ? 'बिल संपादित / अपडेट करा' : 'Edit / Update Bill'}
+                            className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
                         {sale.status === 'Completed' && (
                           <button
                             type="button"
                             onClick={() => handleOpenCancel(sale)}
-                            title={isMr ? 'बिल रद्द करा' : 'Cancel Bill'}
+                            title={isMr ? 'बिल रद्द / डिलीट करा' : 'Cancel / Delete Bill'}
                             className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                           >
                             <Ban className="w-4 h-4" />
@@ -369,6 +398,20 @@ export const SalesRegister: React.FC<SalesRegisterProps> = ({ currentLang, onRef
             </div>
 
             <div className="px-4 py-2.5 bg-slate-100 border-t border-slate-200 flex justify-end gap-2">
+              {onEditSale && viewSale.status === 'Completed' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = viewSale.id;
+                    setViewSale(null);
+                    onEditSale(id);
+                  }}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>{isMr ? 'बिल संपादित करा' : 'Edit Bill'}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

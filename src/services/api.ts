@@ -582,6 +582,182 @@ export const dbService = {
     });
   },
 
+  async updateSale(id: number, sale: Omit<Sale, 'id' | 'created_at'>, userName = 'Admin'): Promise<{ id: number; invoice_no: string }> {
+    await sqliteEngine.getDb();
+    return sqliteEngine.transaction(() => {
+      const existingSale = sqliteEngine.queryOne<Sale>('SELECT * FROM sales WHERE id = ?', [id]);
+      if (!existingSale) throw new Error('Sale invoice not found');
+
+      const oldItems = sqliteEngine.query<SaleItem>('SELECT * FROM sale_items WHERE sale_id = ?', [id]);
+
+      // 1. Revert previous stock quantities
+      for (const oldItem of oldItems) {
+        if (oldItem.batch_id) {
+          sqliteEngine.run('UPDATE product_batches SET current_qty = current_qty + ? WHERE id = ?', [oldItem.quantity, oldItem.batch_id]);
+          sqliteEngine.run(
+            `INSERT INTO stock_movements (
+              date_time, product_id, product_name, batch_id, batch_number, movement_type, 
+              quantity, unit, reference_type, reference_id, location_name, user_name, reason
+            ) VALUES (datetime('now'), ?, ?, ?, ?, 'Stock Adjustment', ?, ?, 'Sale Edit', ?, 'Main Shop', ?, ?)`,
+            [oldItem.product_id, oldItem.product_name, oldItem.batch_id, oldItem.batch_number, oldItem.quantity, oldItem.unit, existingSale.invoice_no, userName, 'Reverting stock before bill update']
+          );
+        }
+      }
+
+      // 2. Revert previous customer credit balance if any
+      if (existingSale.credit_amount > 0 && existingSale.customer_id) {
+        const cust = sqliteEngine.queryOne<Customer>('SELECT current_balance FROM customers WHERE id = ?', [existingSale.customer_id]);
+        const revertedBal = Math.max(0, (cust?.current_balance || 0) - existingSale.credit_amount);
+        sqliteEngine.run('UPDATE customers SET current_balance = ? WHERE id = ?', [revertedBal, existingSale.customer_id]);
+        sqliteEngine.run(
+          `INSERT INTO customer_ledger (
+            customer_id, date, reference_type, reference_no, description, debit, credit, balance, created_at
+          ) VALUES (?, date('now'), 'Adjustment', ?, 'बिल दुरुस्तीपूर्वी उधारी समायोजन', 0, ?, ?, datetime('now'))`,
+          [existingSale.customer_id, existingSale.invoice_no, existingSale.credit_amount, revertedBal]
+        );
+      }
+
+      // 3. Revert previous cash transaction if any
+      if (existingSale.paid_amount > 0 && existingSale.payment_mode === 'Cash') {
+        const lastCash = sqliteEngine.queryOne<{ balance_after: number }>('SELECT balance_after FROM cash_transactions ORDER BY id DESC LIMIT 1');
+        const newCashBal = (lastCash?.balance_after || 0) - existingSale.paid_amount;
+        sqliteEngine.run(
+          `INSERT INTO cash_transactions (
+            date_time, type, category, amount, balance_after, reference_id, description, user_name
+          ) VALUES (datetime('now'), 'OUT', 'Adjustment', ?, ?, ?, 'बिल दुरुस्तीपूर्वी रोख समायोजन', ?)`,
+          [existingSale.paid_amount, newCashBal, existingSale.invoice_no, userName]
+        );
+      }
+
+      // 4. Remove old sale items
+      sqliteEngine.run('DELETE FROM sale_items WHERE sale_id = ?', [id]);
+
+      // 5. Check stock for updated items
+      const inventorySettings = sqliteEngine.queryOne<any>('SELECT * FROM inventory_settings WHERE id = 1');
+      const allowNegative = Boolean(inventorySettings?.allow_negative_stock);
+
+      if (!sale.items || sale.items.length === 0) {
+        throw new Error('Invoice must have at least one item');
+      }
+
+      for (const item of sale.items) {
+        if (item.batch_id) {
+          const batch = sqliteEngine.queryOne<ProductBatch>('SELECT * FROM product_batches WHERE id = ?', [item.batch_id]);
+          if (!batch) {
+            throw new Error(`Batch not found for product: ${item.product_name}`);
+          }
+          if (!allowNegative && batch.current_qty < item.quantity) {
+            throw new Error(`Insufficient stock for ${item.product_name} (Batch: ${batch.batch_number}). Available: ${batch.current_qty}, Requested: ${item.quantity}`);
+          }
+        }
+      }
+
+      // 6. Update Sale Header
+      const invoiceNo = existingSale.invoice_no;
+      let custAadhar = sale.customer_aadhar || '';
+      let prevBal = 0;
+      if (sale.customer_id) {
+        const custRec = sqliteEngine.queryOne<any>('SELECT current_balance, aadhar_no FROM customers WHERE id = ?', [sale.customer_id]);
+        if (custRec) {
+          prevBal = custRec.current_balance || 0;
+          if (!custAadhar && custRec.aadhar_no) custAadhar = custRec.aadhar_no;
+        }
+      }
+      const outstandingBal = prevBal + (sale.credit_amount || 0);
+
+      sqliteEngine.run(
+        `UPDATE sales SET
+          invoice_date = ?, doc_date = ?, customer_id = ?, customer_name = ?, customer_mobile = ?, customer_village = ?,
+          customer_aadhar = ?, customer_outstanding = ?, previous_balance = ?, payment_mode = ?, subtotal = ?, 
+          discount_amount = ?, taxable_amount = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, total_tax = ?, 
+          round_off = ?, grand_total = ?, paid_amount = ?, credit_amount = ?, status = 'Completed', notes = ?, user_name = ?
+        WHERE id = ?`,
+        [
+          sale.invoice_date, sale.doc_date || sale.invoice_date, sale.customer_id || 0, sale.customer_name || 'Walk-in',
+          sale.customer_mobile || '', sale.customer_village || '', custAadhar, outstandingBal, prevBal,
+          sale.payment_mode, sale.subtotal, sale.discount_amount, sale.taxable_amount, sale.cgst_amount, sale.sgst_amount,
+          sale.igst_amount, sale.total_tax, sale.round_off, sale.grand_total, sale.paid_amount,
+          sale.credit_amount, sale.notes || '', userName, id
+        ]
+      );
+
+      // 7. Insert New Sale Items & Deduct Stock
+      for (const item of sale.items) {
+        const prodInfo = sqliteEngine.queryOne<any>(
+          'SELECT company, brand, technical_name, fertilizer_grade, subcategory FROM products WHERE id = ?', 
+          [item.product_id]
+        );
+        const itemMfg = item.mfg || prodInfo?.company || prodInfo?.brand || '';
+        const itemContent = item.content || prodInfo?.technical_name || prodInfo?.fertilizer_grade || prodInfo?.subcategory || '';
+
+        sqliteEngine.run(
+          `INSERT INTO sale_items (
+            sale_id, product_id, product_name, product_code, hsn_code, mfg, company, content, batch_id, batch_number, 
+            expiry_date, unit, pack_size, quantity, rate, mrp, discount_percent, discount_amount, 
+            taxable_value, gst_rate, cgst_amount, sgst_amount, igst_amount, total_tax, total_amount
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id, item.product_id, item.product_name, item.product_code, item.hsn_code, itemMfg, itemMfg, itemContent,
+            item.batch_id || null, item.batch_number || '', item.expiry_date || '', item.unit,
+            item.pack_size || '', item.quantity, item.rate, item.mrp, item.discount_percent,
+            item.discount_amount, item.taxable_value, item.gst_rate, item.cgst_amount,
+            item.sgst_amount, item.igst_amount, item.total_tax, item.total_amount
+          ]
+        );
+
+        if (item.batch_id) {
+          sqliteEngine.run(
+            'UPDATE product_batches SET current_qty = current_qty - ? WHERE id = ?',
+            [item.quantity, item.batch_id]
+          );
+
+          sqliteEngine.run(
+            `INSERT INTO stock_movements (
+              date_time, product_id, product_name, batch_id, batch_number, movement_type, 
+              quantity, unit, reference_type, reference_id, location_name, user_name, reason
+            ) VALUES (datetime('now'), ?, ?, ?, ?, 'Sale', ?, ?, 'Sale', ?, 'Main Shop', ?, 'Updated Invoice Billing')`,
+            [item.product_id, item.product_name, item.batch_id, item.batch_number, -item.quantity, item.unit, invoiceNo, userName]
+          );
+        }
+      }
+
+      // 8. Apply updated Customer Credit Ledger
+      if (sale.credit_amount > 0 && sale.customer_id) {
+        const cust = sqliteEngine.queryOne<Customer>('SELECT current_balance FROM customers WHERE id = ?', [sale.customer_id]);
+        const newBal = (cust?.current_balance || 0) + sale.credit_amount;
+        sqliteEngine.run('UPDATE customers SET current_balance = ? WHERE id = ?', [newBal, sale.customer_id]);
+
+        sqliteEngine.run(
+          `INSERT INTO customer_ledger (
+            customer_id, date, reference_type, reference_no, description, debit, credit, balance, created_at
+          ) VALUES (?, ?, 'Credit Sale', ?, 'अद्ययावत बिल उधारी खरेदी', ?, 0, ?, datetime('now'))`,
+          [sale.customer_id, sale.invoice_date, invoiceNo, sale.credit_amount, newBal]
+        );
+      }
+
+      // 9. Apply updated Cash Transaction
+      if (sale.paid_amount > 0 && (sale.payment_mode === 'Cash' || sale.payment_mode === 'Mixed')) {
+        const lastCash = sqliteEngine.queryOne<{ balance_after: number }>('SELECT balance_after FROM cash_transactions ORDER BY id DESC LIMIT 1');
+        const newCashBal = (lastCash?.balance_after || 0) + sale.paid_amount;
+
+        sqliteEngine.run(
+          `INSERT INTO cash_transactions (
+            date_time, type, category, amount, balance_after, reference_id, description, user_name
+          ) VALUES (datetime('now'), 'IN', 'Cash Sale', ?, ?, ?, 'अद्ययावत रोख विक्री पावती', ?)`,
+          [sale.paid_amount, newCashBal, invoiceNo, userName]
+        );
+      }
+
+      this.logAudit(userName, 'UPDATE_SALE', 'Sale', invoiceNo, `Sale invoice ${invoiceNo} updated. New total: ${sale.grand_total}`);
+
+      return { id, invoice_no: invoiceNo };
+    });
+  },
+
+  async deleteSale(id: number, reason = 'Deleted by user', userName = 'Admin'): Promise<void> {
+    return this.cancelSale(id, reason, userName);
+  },
+
   // ================= PURCHASES =================
   async createPurchase(purchase: Omit<Purchase, 'id' | 'created_at'>, userName = 'Admin'): Promise<number> {
     await sqliteEngine.getDb();

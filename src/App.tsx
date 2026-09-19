@@ -55,6 +55,9 @@ export default function App() {
   // Search Modal
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+  // Sales Editing state across tabs
+  const [editingSaleId, setEditingSaleId] = useState<number | null>(null);
+
   const handleLanguageChange = (lang: AppLanguage) => {
     setCurrentLang(lang);
     localStorage.setItem('ksk_lang', lang);
@@ -152,6 +155,9 @@ export default function App() {
   const handleNavigate = (tab: NavItemKey, id?: number) => {
     setActiveTab(tab);
     setTargetEntityId(id);
+    if (tab !== 'pos') {
+      setEditingSaleId(null);
+    }
     setIsSearchOpen(false);
   };
 
@@ -248,7 +254,10 @@ export default function App() {
           {activeTab === 'pos' && (
             <SalesPOS
               currentLang={currentLang}
+              editingSaleId={editingSaleId}
+              onCancelEdit={() => setEditingSaleId(null)}
               onSaleCompleted={() => {
+                setEditingSaleId(null);
                 refreshGlobalMetrics();
               }}
             />
@@ -258,6 +267,14 @@ export default function App() {
             <SalesRegister
               currentLang={currentLang}
               onRefreshData={refreshGlobalMetrics}
+              onNewSale={() => {
+                setEditingSaleId(null);
+                setActiveTab('pos');
+              }}
+              onEditSale={(saleId) => {
+                setEditingSaleId(saleId);
+                setActiveTab('pos');
+              }}
             />
           )}
 

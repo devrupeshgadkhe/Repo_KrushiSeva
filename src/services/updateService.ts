@@ -26,7 +26,7 @@ type UpdateListener = (state: UpdateState) => void;
 class UpdateService {
   private state: UpdateState = {
     isElectron: false,
-    currentVersion: '1.0.8',
+    currentVersion: '1.0.9',
     latestVersion: null,
     hasUpdate: false,
     checking: false,
