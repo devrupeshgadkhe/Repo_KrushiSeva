@@ -10,12 +10,16 @@ import {
   Minus,
   Square,
   X,
-  Clock
+  Clock,
+  RefreshCw,
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
 import { AppLanguage, User } from '../../types';
 import { getTranslation } from '../../i18n';
 import { formatINR } from '../../utils/formatters';
 import { dbService } from '../../services/api';
+import { updateService, UpdateState } from '../../services/updateService';
 
 interface TitleBarProps {
   currentLang: AppLanguage;
@@ -35,6 +39,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   cashInHand,
 }) => {
   const [timeStr, setTimeStr] = useState('');
+  const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+
+  useEffect(() => {
+    const unsub = updateService.subscribe(setUpdateState);
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const updateTime = () => {
@@ -102,6 +112,30 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <Clock className="w-3 h-3 text-emerald-400" />
           <span>{timeStr}</span>
         </div>
+
+        {/* Windows Desktop Auto-Update Status Indicator */}
+        {updateState.isElectron && (updateState.downloading || updateState.updateReady) && (
+          <div className="flex items-center">
+            {updateState.updateReady ? (
+              <button
+                type="button"
+                onClick={() => updateService.restartAndInstall()}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs shadow-sm cursor-pointer transition-all active:scale-95 animate-pulse"
+                title={currentLang === 'mr' ? 'अपडेट तयार आहे. रीस्टार्ट करण्यासाठी क्लिक करा' : 'Update ready. Click to restart and apply'}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-slate-950" />
+                <span>{currentLang === 'mr' ? 'नवीन व्हर्जन तयार - रीस्टार्ट करा' : 'Update Ready - Restart'}</span>
+              </button>
+            ) : updateState.downloading ? (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-950 border border-emerald-500/50 text-[11px] text-emerald-300 font-mono">
+                <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" />
+                <span>
+                  {currentLang === 'mr' ? 'ऑटो-अपडेट' : 'Auto-updating'}: {updateState.progress?.percent || 0}%
+                </span>
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {/* Language Toggle: Marathi / English */}
         <div className="flex items-center bg-emerald-950/70 border border-emerald-600/50 rounded-lg p-0.5 shadow-inner">

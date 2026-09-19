@@ -28,6 +28,24 @@ jobs:
         with:
           node-version: 22
 
+      - name: Auto-Increment App Version on Push
+        id: auto_version
+        shell: bash
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          node scripts/auto-version.cjs
+
+      - name: Commit & Push Bumped Version to Git
+        shell: bash
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "chore(release): auto-bump version to v${{ steps.auto_version.outputs.version }} [skip ci]"
+          git push origin HEAD:${{ github.ref_name }} || echo "Auto-commit push skipped or not permitted"
+
       - name: Install Dependencies
         run: npm install --no-audit --no-fund
 
@@ -40,29 +58,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract App Version
-        id: get_version
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Publish .EXE to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          name: "Krushi Seva ERP v${{ steps.get_version.outputs.version }}"
+          tag_name: v${{ steps.auto_version.outputs.version }}
+          name: "Krushi Seva ERP v${{ steps.auto_version.outputs.version }}"
+          make_latest: true
           body: |
             ## कृषी सेवा केंद्र ERP - Windows Desktop App (.exe)
             
-            हे व्हर्जन Google AI Studio मधून कोड पुश केल्यावर स्वयंचलितपणे (Automated) तयार करण्यात आले आहे.
+            हे व्हर्जन GitHub वर कोड पुश केल्यावर स्वयंचलितपणे (Auto-Versioned) तयार करण्यात आले आहे.
             
-            - **आवृत्ती (Version):** v${{ steps.get_version.outputs.version }}
+            - **आवृत्ती (Version):** v${{ steps.auto_version.outputs.version }}
             - **कमिट (Commit):** `${{ github.sha }}`
             - **प्लॅटफॉर्म:** Windows 10/11 (64-bit)
             
             ### डाउनलोड आणि इन्स्टॉलेशन:
-            खालील **`Krushi Seva ERP Setup ${{ steps.get_version.outputs.version }}.exe`** फाईल डाउनलोड करा आणि आपल्या संगणकावर इन्स्टॉल करा.
+            खालील **`Krushi Seva ERP Setup ${{ steps.auto_version.outputs.version }}.exe`** फाईल डाउनलोड करा आणि आपल्या संगणकावर इन्स्टॉल करा.
           files: |
             release/*.exe
             release/latest.yml
@@ -75,7 +87,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: KrushiSevaERP-Windows-Setup-v${{ steps.get_version.outputs.version }}
+          name: KrushiSevaERP-Windows-Setup-v${{ steps.auto_version.outputs.version }}
           path: |
             release/*.exe
             release/latest.yml

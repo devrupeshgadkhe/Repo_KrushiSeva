@@ -19,6 +19,7 @@ import { AppLanguage, BusinessSettings, InvoiceSettings, User } from '../types';
 import { getTranslation } from '../i18n';
 import { dbService } from '../services/api';
 import { useFeedback } from '../components/common/FeedbackContext';
+import { updateService, UpdateState } from '../services/updateService';
 
 interface SettingsProps {
   currentLang: AppLanguage;
@@ -34,43 +35,45 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
   const [successMsg, setSuccessMsg] = useState('');
 
   // Desktop App & Update State
-  const isElectron = typeof window !== 'undefined' && !!window.electronAPI?.isElectron;
-  const [appVersion, setAppVersion] = useState<string>('1.0.0');
+  const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+  const isElectron = updateState.isElectron;
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatusMsg, setUpdateStatusMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isElectron && window.electronAPI) {
-      window.electronAPI.getAppVersion().then((v) => {
-        if (v) setAppVersion(v);
-      }).catch(console.error);
-    }
-  }, [isElectron]);
+    const unsub = updateService.subscribe(setUpdateState);
+    return unsub;
+  }, []);
 
   const handleCheckForUpdates = async () => {
     setCheckingUpdate(true);
     setUpdateStatusMsg(null);
-    if (isElectron && window.electronAPI) {
-      try {
-        const res = await window.electronAPI.checkForUpdates();
-        if (res.status === 'dev_mode') {
-          setUpdateStatusMsg(isMr ? 'डेव्हलपमेंट मोडमध्ये आहे. प्रत्यक्ष .exe इन्स्टॉलरमध्ये ऑटो-अपडेट सक्रिय असते.' : 'Running in development mode. Auto-updates activate in production .exe builds.');
-        } else if (res.status === 'error') {
-          setUpdateStatusMsg(res.message || (isMr ? 'अपडेट तपासताना अडचण आली.' : 'Error checking for updates.'));
-        } else {
-          setUpdateStatusMsg(isMr ? 'अपडेट तपासणी पूर्ण झाली. नवीन व्हर्जन उपलब्ध असल्यास नोटिफिकेशन दिसेल.' : 'Update check initiated. Notification will appear if an update is available.');
-        }
-      } catch (err: any) {
-        setUpdateStatusMsg(err.message || 'Update check failed');
+    try {
+      const state = await updateService.checkForUpdates(isElectron);
+      if (!state.isElectron) {
+        setUpdateStatusMsg(
+          isMr 
+            ? `सध्या तुम्ही वेब प्रिव्ह्यू मोडमध्ये आहात (v${state.currentVersion}). अधिकृत विन्डोज डेस्कटॉप ॲप (.exe) स्वयंचलितपणे बॅकग्राऊंडमध्ये अपडेट होते.`
+            : `Currently in Web Preview mode (v${state.currentVersion}). The Windows Desktop app automatically updates in the background.`
+        );
+      } else if (state.hasUpdate) {
+        setUpdateStatusMsg(
+          isMr 
+            ? `नवीन व्हर्जन v${state.latestVersion} उपलब्ध आहे! बॅकग्राऊंडमध्ये ऑटो-डाऊनलोड सुरू झाले आहे.`
+            : `New version v${state.latestVersion} detected! Auto-download initiated in background.`
+        );
+      } else {
+        setUpdateStatusMsg(
+          isMr 
+            ? `तुमचे सॉफ्टवेअर नवीनतम व्हर्जन (v${state.currentVersion}) वर अद्ययावत आहे.`
+            : `Your software is already on the latest version (v${state.currentVersion}).`
+        );
       }
-    } else {
-      setTimeout(() => {
-        setUpdateStatusMsg(isMr ? 'सध्या तुम्ही वेब मोडमध्ये आहात. डेस्कटॉप ॲप (.exe) विन्डोजवर चालू केल्यावर आपोआप GitHub वरून अपडेट होईल.' : 'Currently running in Web Preview. The desktop (.exe) app will automatically sync updates from GitHub when installed on Windows.');
-        setCheckingUpdate(false);
-      }, 600);
-      return;
+    } catch (err: any) {
+      setUpdateStatusMsg(err.message || 'Update check failed');
+    } finally {
+      setCheckingUpdate(false);
     }
-    setCheckingUpdate(false);
   };
 
   // Business Settings State
@@ -795,10 +798,17 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
                 {isMr ? 'सध्याची आवृत्ती (Version)' : 'Current Version'}
               </span>
               <div className="text-sm font-bold font-mono text-emerald-800">
-                v{appVersion}
+                v{updateState.currentVersion}
+                {updateState.latestVersion && updateState.hasUpdate && (
+                  <span className="ml-2 text-xs text-amber-600 font-bold">
+                    ➔ v{updateState.latestVersion} (नवीन)
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500">
-                {isMr ? 'नवीनतम अधिकृत रिलीज' : 'Latest official release'}
+                {updateState.hasUpdate 
+                  ? (isMr ? 'नवीन अपडेट उपलब्ध आहे' : 'Newer update available')
+                  : (isMr ? 'नवीनतम अधिकृत रिलीज' : 'Latest official release')}
               </p>
             </div>
 

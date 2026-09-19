@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  downloadAndInstallDirect: (downloadUrl, version) => ipcRenderer.invoke('download-and-install-direct', { downloadUrl, version }),
   quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
 
   // Event Listeners from Main Process

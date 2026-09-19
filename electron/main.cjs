@@ -1,18 +1,101 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const os = require('os');
+const { spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
+let downloadedDirectInstaller = null;
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
-// Configure Auto-Updater
-autoUpdater.autoDownload = false; // Let user or UI initiate download
+// Configure Auto-Updater - auto download enabled so no manual button is needed
+autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
 function sendToWindow(channel, data) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, data);
   }
+}
+
+// Helper to download direct installer from GitHub Release asset (handles redirects)
+function downloadDirectAsset(url, targetVersion) {
+  const tempFile = path.join(os.tmpdir(), `Krushi-Seva-Setup-${targetVersion || 'latest'}.exe`);
+  
+  const follow = (currentUrl, redirectCount = 0) => {
+    if (redirectCount > 6) {
+      sendToWindow('update-error', { message: 'Too many redirects during update download' });
+      return;
+    }
+    
+    try {
+      const parsed = new URL(currentUrl);
+      const client = parsed.protocol === 'https:' ? https : http;
+      
+      const req = client.get(currentUrl, {
+        headers: { 'User-Agent': 'KrushiSevaERP-AutoUpdater' }
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return follow(res.headers.location, redirectCount + 1);
+        }
+        
+        if (res.statusCode !== 200) {
+          sendToWindow('update-error', { message: `Update download failed with HTTP status ${res.statusCode}` });
+          return;
+        }
+
+        const total = parseInt(res.headers['content-length'] || '0', 10);
+        let transferred = 0;
+        let lastTime = Date.now();
+        let lastTransferred = 0;
+
+        const fileStream = fs.createWriteStream(tempFile);
+        
+        res.on('data', (chunk) => {
+          transferred += chunk.length;
+          const now = Date.now();
+          if (now - lastTime >= 350 || transferred === total) {
+            const deltaSec = (now - lastTime) / 1000;
+            const bytesPerSecond = deltaSec > 0 ? (transferred - lastTransferred) / deltaSec : 0;
+            const percent = total > 0 ? Math.min(100, Math.round((transferred / total) * 100)) : 0;
+            sendToWindow('download-progress', {
+              percent,
+              transferred,
+              total,
+              bytesPerSecond
+            });
+            lastTime = now;
+            lastTransferred = transferred;
+          }
+        });
+
+        res.pipe(fileStream);
+
+        fileStream.on('finish', () => {
+          fileStream.close(() => {
+            downloadedDirectInstaller = tempFile;
+            sendToWindow('update-downloaded', { version: targetVersion });
+          });
+        });
+
+        fileStream.on('error', (err) => {
+          fs.unlink(tempFile, () => {});
+          sendToWindow('update-error', { message: err.message || 'File write error during update' });
+        });
+      });
+
+      req.on('error', (err) => {
+        sendToWindow('update-error', { message: err.message || 'Network error during update' });
+      });
+    } catch (e) {
+      sendToWindow('update-error', { message: e.message || 'Error initiating download' });
+    }
+  };
+
+  follow(url);
 }
 
 function createWindow() {
@@ -176,7 +259,31 @@ ipcMain.handle('download-update', async () => {
   }
 });
 
+ipcMain.handle('download-and-install-direct', async (_event, { downloadUrl, version }) => {
+  if (!downloadUrl) {
+    return { status: 'error', message: 'No download URL provided' };
+  }
+  try {
+    downloadDirectAsset(downloadUrl, version);
+    return { status: 'downloading' };
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
+});
+
 ipcMain.handle('quit-and-install', () => {
+  if (downloadedDirectInstaller && fs.existsSync(downloadedDirectInstaller)) {
+    try {
+      const child = spawn(downloadedDirectInstaller, [], { detached: true, stdio: 'ignore' });
+      child.unref();
+      setTimeout(() => {
+        app.quit();
+      }, 600);
+      return;
+    } catch (e) {
+      console.error('Failed to launch downloaded installer:', e);
+    }
+  }
   autoUpdater.quitAndInstall();
 });
 

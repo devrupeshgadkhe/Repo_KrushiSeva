@@ -2,6 +2,7 @@ export interface ElectronUpdateInfo {
   version: string;
   releaseDate?: string;
   releaseNotes?: string | string[];
+  downloadUrl?: string;
 }
 
 export interface ElectronDownloadProgress {
@@ -16,6 +17,7 @@ export interface ElectronAPI {
   getAppVersion: () => Promise<string>;
   checkForUpdates: () => Promise<{ status: string; updateInfo?: any; message?: string; version?: string }>;
   downloadUpdate: () => Promise<{ status: string; message?: string }>;
+  downloadAndInstallDirect?: (downloadUrl: string, version: string) => Promise<{ status: string; message?: string }>;
   quitAndInstall: () => Promise<void>;
 
   onUpdateChecking: (callback: (data: any) => void) => () => void;
