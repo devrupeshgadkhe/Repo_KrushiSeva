@@ -75,6 +75,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <h1 className="font-bold text-sm tracking-wide text-white leading-tight">
               {getTranslation('app_title', currentLang)}
             </h1>
+            <span 
+              className="px-1.5 py-0.2 rounded bg-emerald-950/70 border border-emerald-500/40 text-[10px] font-mono font-bold text-emerald-300 shadow-2xs"
+              title={updateState.isElectron ? 'Windows Desktop App' : 'Web Preview'}
+            >
+              v{updateState.currentVersion}
+            </span>
           </div>
           <p className="text-[11px] text-emerald-200/75 leading-none">
             {getTranslation('app_subtitle', currentLang)}

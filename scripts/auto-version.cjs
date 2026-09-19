@@ -10,9 +10,9 @@ const [cMajor, cMinor, cPatch] = currentVersion.split('.').map(n => parseInt(n, 
 
 const major = cMajor;
 const minor = cMinor;
-let highestPatch = cPatch;
+let highestExistingTagPatch = -1;
 
-// Try to fetch tags and scan existing releases/tags in Git
+// Fetch git tags to verify existing release versions in repository
 try {
   execSync('git fetch --tags --force', { stdio: 'ignore' });
   const rawTags = execSync('git tag -l "v*"').toString();
@@ -22,32 +22,30 @@ try {
     const clean = tag.replace(/^v/, '');
     const [tMaj, tMin, tPat] = clean.split('.').map(n => parseInt(n, 10) || 0);
     if (tMaj === major && tMin === minor && !isNaN(tPat)) {
-      if (tPat > highestPatch) {
-        highestPatch = tPat;
+      if (tPat > highestExistingTagPatch) {
+        highestExistingTagPatch = tPat;
       }
     }
   }
 } catch (e) {
-  // Ignore git tag fetch errors in non-git or shallow environments
+  // Ignore errors in non-git or offline environments
 }
 
-// Next patch version is always at least highest existing + 1
-let nextPatch = highestPatch + 1;
+let targetPatch = cPatch;
 
-// If GITHUB_RUN_NUMBER is available and higher, align to avoid any collision
-const runNumber = parseInt(process.env.GITHUB_RUN_NUMBER || '0', 10);
-if (runNumber > 0 && runNumber > nextPatch) {
-  nextPatch = runNumber;
+// If this tag version already exists in GitHub Releases, auto-increment to next patch
+if (cPatch <= highestExistingTagPatch) {
+  targetPatch = highestExistingTagPatch + 1;
 }
 
-const newVersion = `${major}.${minor}.${nextPatch}`;
+const newVersion = `${major}.${minor}.${targetPatch}`;
 pkg.version = newVersion;
 
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
 
-console.log(`[auto-version] Bumping version: ${currentVersion} ➔ ${newVersion}`);
+console.log(`[auto-version] Package version set to: ${newVersion} (current: ${currentVersion}, highest released: ${highestExistingTagPatch >= 0 ? `${major}.${minor}.${highestExistingTagPatch}` : 'none'})`);
 
-// Support GitHub Actions step output
+// Export version for GitHub Actions workflow
 if (process.env.GITHUB_OUTPUT) {
   try {
     fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${newVersion}\n`);

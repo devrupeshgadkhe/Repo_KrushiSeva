@@ -21,6 +21,7 @@ import { AppLanguage, DashboardMetrics } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { updateService, UpdateState } from '../services/updateService';
 
 interface DashboardProps {
   currentLang: AppLanguage;
@@ -37,6 +38,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+
+  useEffect(() => {
+    const unsub = updateService.subscribe(setUpdateState);
+    return unsub;
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -70,9 +77,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Top Welcome & Quick Actions Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
         <div>
-          <h2 className="text-lg font-bold text-slate-800 tracking-tight">
-            {getTranslation('nav_dashboard', currentLang)} — {isMr ? 'व्यवसाय आढावा' : 'Business Overview'}
-          </h2>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+              {getTranslation('nav_dashboard', currentLang)} — {isMr ? 'व्यवसाय आढावा' : 'Business Overview'}
+            </h2>
+            <div 
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-mono font-bold text-emerald-800 shadow-2xs"
+              title={updateState.isElectron ? 'Windows Desktop App Edition' : 'Web Browser Preview'}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>v{updateState.currentVersion}</span>
+              <span className="text-[10px] text-emerald-600 font-sans font-normal border-l border-emerald-200 pl-1.5 ml-0.5">
+                {updateState.isElectron ? (isMr ? 'डेस्कटॉप (.exe)' : 'Desktop (.exe)') : (isMr ? 'वेब आवृत्ती' : 'Web Edition')}
+              </span>
+            </div>
+            {updateState.hasUpdate && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[11px] font-medium text-amber-800 animate-pulse">
+                {updateState.downloading
+                  ? (isMr ? `ऑटो-अपडेट होत आहे (v${updateState.latestVersion})...` : `Downloading v${updateState.latestVersion}...`)
+                  : (isMr ? `नवीन व्हर्जन v${updateState.latestVersion} उपलब्ध` : `New v${updateState.latestVersion} ready`)}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500 mt-0.5">
             {isMr ? 'कृषी सेवा केंद्र व्यवस्थापन' : 'Agricultural Retail Management'} • {getTranslation('financial_year', currentLang)}
           </p>

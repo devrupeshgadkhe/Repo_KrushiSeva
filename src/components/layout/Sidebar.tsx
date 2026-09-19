@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { AppLanguage } from '../../types';
 import { getTranslation } from '../../i18n';
+import { updateService } from '../../services/updateService';
 
 export type NavItemKey = 
   | 'dashboard'
@@ -128,8 +129,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Collapse Toggle Footer */}
       <div className="p-2 border-t border-slate-800 flex items-center justify-between">
         {!collapsed && (
-          <div className="text-[10px] text-slate-400 px-2 font-medium">
-            {getTranslation('offline_secure', currentLang)}
+          <div className="text-[10px] text-slate-400 px-2 font-mono flex items-center gap-1.5">
+            <span className="font-bold text-emerald-400">v{updateService.getState().currentVersion}</span>
+            <span className="text-slate-600">•</span>
+            <span className="font-sans">{getTranslation('offline_secure', currentLang)}</span>
           </div>
         )}
         <button
