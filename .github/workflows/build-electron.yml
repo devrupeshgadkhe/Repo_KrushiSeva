@@ -36,16 +36,6 @@ jobs:
         run: |
           node scripts/auto-version.cjs
 
-      - name: Commit & Push Bumped Version to Git
-        shell: bash
-        continue-on-error: true
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "chore(release): auto-bump version to v${{ steps.auto_version.outputs.version }} [skip ci]"
-          git push origin HEAD:${{ github.ref_name }} || echo "Auto-commit push skipped or not permitted"
-
       - name: Install Dependencies
         run: npm install --no-audit --no-fund
 
@@ -67,14 +57,14 @@ jobs:
           body: |
             ## कृषी सेवा केंद्र ERP - Windows Desktop App (.exe)
             
-            हे व्हर्जन GitHub वर कोड पुश केल्यावर स्वयंचलितपणे (Auto-Versioned) तयार करण्यात आले आहे.
+            हे व्हर्जन यशस्वीरित्या कंपाईल आणि पॅकेज झाल्यानंतर तयार करण्यात आले आहे.
             
             - **आवृत्ती (Version):** v${{ steps.auto_version.outputs.version }}
             - **कमिट (Commit):** `${{ github.sha }}`
             - **प्लॅटफॉर्म:** Windows 10/11 (64-bit)
             
             ### डाउनलोड आणि इन्स्टॉलेशन:
-            खालील **`Krushi Seva ERP Setup ${{ steps.auto_version.outputs.version }}.exe`** फाईल डाउनलोड करा आणि आपल्या संगणकावर इन्स्टॉल करा.
+            खालील **`Krushi-Seva-ERP-Setup-${{ steps.auto_version.outputs.version }}.exe`** फाईल डाउनलोड करा आणि आपल्या संगणकावर इन्स्टॉल करा.
           files: |
             release/*.exe
             release/latest.yml
@@ -82,6 +72,16 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit & Push Bumped Version to Git
+        shell: bash
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "chore(release): auto-bump version to v${{ steps.auto_version.outputs.version }} [skip ci]"
+          git push origin HEAD:${{ github.ref_name }} || echo "Auto-commit push skipped or not permitted"
 
       - name: Upload .EXE as GitHub Actions Artifact
         uses: actions/upload-artifact@v4

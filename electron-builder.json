@@ -12,6 +12,7 @@
   ],
   "win": {
     "icon": "electron/icon.ico",
+    "artifactName": "Krushi-Seva-ERP-Setup-${version}.${ext}",
     "target": [
       {
         "target": "nsis",
@@ -29,7 +30,8 @@
     "shortcutName": "Krushi Seva ERP",
     "uninstallDisplayName": "Krushi Seva ERP",
     "installerIcon": "electron/icon.ico",
-    "uninstallerIcon": "electron/icon.ico"
+    "uninstallerIcon": "electron/icon.ico",
+    "artifactName": "Krushi-Seva-ERP-Setup-${version}.${ext}"
   },
   "publish": {
     "provider": "github",
