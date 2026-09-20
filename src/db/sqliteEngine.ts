@@ -82,6 +82,7 @@ class SQLiteDatabaseManager {
       'ALTER TABLE sale_items ADD COLUMN mfg TEXT;',
       'ALTER TABLE sale_items ADD COLUMN company TEXT;',
       'ALTER TABLE sale_items ADD COLUMN content TEXT;',
+      'ALTER TABLE products ADD COLUMN technical_name TEXT;',
     ];
 
     for (const sql of migrationStatements) {

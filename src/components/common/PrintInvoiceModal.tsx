@@ -29,7 +29,13 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   const isMr = currentLang === 'mr';
 
   const handlePrint = () => {
+    const oldTitle = document.title;
+    const cleanShop = (businessSettings.shop_name || 'Krushi-Seva').replace(/\s+/g, '-');
+    document.title = `${cleanShop}-Invoice-${sale.doc_no || sale.invoice_no}`;
     window.print();
+    setTimeout(() => {
+      document.title = oldTitle;
+    }, 1000);
   };
 
   const handleShareWhatsApp = () => {
@@ -144,6 +150,16 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
+              className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title={isMr ? 'पीडीएफ म्हणून सेव्ह करा / डाऊनलोड करा' : 'Save as PDF / Download'}
+            >
+              <Download className="w-4 h-4" />
+              <span>{isMr ? 'PDF सेव्ह करा' : 'Save PDF'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrint}
               className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4" />
@@ -191,20 +207,32 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     <div><span className="font-bold">Fert Lic(R):</span> {businessSettings.fert_licence_r || businessSettings.fertilizer_licence || '-'}</div>
                   </div>
 
-                  {/* Center: Shop Name & Address */}
-                  <div className="col-span-6 text-center px-1">
-                    <h1 className="text-xl font-black text-emerald-950 uppercase tracking-tight">
-                      {isMr && businessSettings.shop_name_mr ? businessSettings.shop_name_mr : businessSettings.shop_name}
-                    </h1>
-                    {businessSettings.shop_name_mr && (
-                      <h2 className="text-xs font-bold text-slate-800">
-                        {businessSettings.shop_name}
-                      </h2>
-                    )}
-                    <p className="text-[11px] text-slate-700 mt-1 leading-snug">
+                  {/* Center: Shop Name, Logo & Address */}
+                  <div className="col-span-6 flex flex-col items-center justify-center text-center px-1">
+                    <div className="flex items-center justify-center gap-2.5 mb-1">
+                      <img 
+                        src={businessSettings.logo_url || '/icon.png'} 
+                        alt="Logo" 
+                        className="w-11 h-11 object-contain rounded-full shadow-2xs border border-emerald-600/30 shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      <div className="text-center">
+                        <h1 className="text-xl font-black text-emerald-950 uppercase tracking-tight leading-tight">
+                          {isMr && businessSettings.shop_name_mr ? businessSettings.shop_name_mr : businessSettings.shop_name}
+                        </h1>
+                        {businessSettings.shop_name_mr && (
+                          <h2 className="text-xs font-bold text-slate-700 tracking-wide mt-0.5">
+                            {businessSettings.shop_name}
+                          </h2>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-700 mt-0.5 leading-snug">
                       {businessSettings.address}, {businessSettings.village_city}, {isMr ? 'ता.' : 'Tal.'} {businessSettings.taluka || businessSettings.village_city}, {isMr ? 'जि.' : 'Dist.'} {businessSettings.district} - {businessSettings.pincode}
                     </p>
-                    <p className="text-[10px] text-slate-600">
+                    <p className="text-[10px] text-slate-600 font-medium">
                       {businessSettings.state}
                     </p>
                   </div>
@@ -483,7 +511,15 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           ) : (
             /* =================== THERMAL 80mm RECEIPT =================== */
             <div className="bg-white text-black w-80 p-4 shadow-sm border border-slate-300 rounded-sm font-mono text-[11px] leading-tight">
-              <div className="text-center border-b border-dashed border-black pb-2 mb-2">
+              <div className="text-center border-b border-dashed border-black pb-2 mb-2 flex flex-col items-center">
+                <img 
+                  src={businessSettings.logo_url || '/icon.png'} 
+                  alt="Logo" 
+                  className="w-9 h-9 object-contain rounded-full mb-1 border border-black/20"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
                 <div className="font-bold text-sm tracking-tight">
                   {isMr && businessSettings.shop_name_mr ? businessSettings.shop_name_mr : businessSettings.shop_name}
                 </div>

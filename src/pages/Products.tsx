@@ -52,6 +52,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
   const [barcode, setBarcode] = useState('');
   const [technicalName, setTechnicalName] = useState('');
   const [toxicityColor, setToxicityColor] = useState('');
+  const [openingStock, setOpeningStock] = useState<number | ''>(10);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -87,6 +88,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
     setBarcode('');
     setTechnicalName('');
     setToxicityColor('');
+    setOpeningStock(10);
     setShowModal(true);
   };
 
@@ -139,6 +141,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
         barcode: barcode.trim() || undefined,
         technical_name: technicalName.trim() || undefined,
         toxicity_color: toxicityColor || undefined,
+        ...(!editingProduct && openingStock !== '' ? { opening_stock: Number(openingStock) || 0 } : {}),
       };
 
       if (editingProduct) {
@@ -579,6 +582,27 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
                     className="w-full p-2 border border-slate-300 rounded"
                   />
                 </div>
+
+                {!editingProduct && (
+                  <div className="sm:col-span-2 bg-emerald-50/70 p-3 rounded-lg border border-emerald-200 flex items-center justify-between gap-4">
+                    <div>
+                      <label className="block font-bold text-emerald-900 text-xs">
+                        {currentLang === 'mr' ? 'आरंभीचा साठा / प्रारंभिक स्टॉक (Opening Stock)' : 'Opening Stock (Initial Quantity)'}
+                      </label>
+                      <p className="text-[11px] text-emerald-700">
+                        {currentLang === 'mr' ? 'उत्पादन तयार होताच विक्रीसाठी बॅच तयार होईल.' : 'Default batch will be created so product is immediately sellable.'}
+                      </p>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={openingStock}
+                      onChange={(e) => setOpeningStock(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      placeholder="10"
+                      className="w-28 p-2 bg-white border border-emerald-400 rounded font-mono font-bold text-emerald-900 text-right focus:outline-emerald-600"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="px-5 py-3 bg-slate-100 -mx-5 -mb-5 border-t border-slate-200 flex justify-end gap-2">

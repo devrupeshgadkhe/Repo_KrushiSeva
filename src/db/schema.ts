@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS products (
   min_stock REAL NOT NULL DEFAULT 10,
   max_stock REAL DEFAULT 500,
   reorder_level REAL NOT NULL DEFAULT 15,
+  technical_name TEXT,
   fertilizer_grade TEXT,
   npk_ratio TEXT,
   seed_variety TEXT,

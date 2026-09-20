@@ -219,10 +219,16 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
     const q = productQuery.toLowerCase();
     const filtered = products.filter(
       (p) =>
-        p.name.toLowerCase().includes(q) ||
+        (p.name && p.name.toLowerCase().includes(q)) ||
         (p.name_mr && p.name_mr.toLowerCase().includes(q)) ||
-        p.product_code.toLowerCase().includes(q) ||
+        (p.name_hi && p.name_hi.toLowerCase().includes(q)) ||
+        (p.product_code && p.product_code.toLowerCase().includes(q)) ||
         (p.company && p.company.toLowerCase().includes(q)) ||
+        (p.brand && p.brand.toLowerCase().includes(q)) ||
+        (p.technical_name && p.technical_name.toLowerCase().includes(q)) ||
+        (p.fertilizer_grade && p.fertilizer_grade.toLowerCase().includes(q)) ||
+        (p.category && p.category.toLowerCase().includes(q)) ||
+        (p.subcategory && p.subcategory.toLowerCase().includes(q)) ||
         (p.barcode && p.barcode.includes(q))
     );
 
@@ -242,12 +248,27 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
   // When user selects a product
   const selectProductForCart = async (product: Product) => {
     try {
-      const batches = await dbService.getProductBatches(product.id);
-      const inStockBatches = batches.filter((b) => b.current_qty > 0);
+      let batches = await dbService.getProductBatches(product.id);
+
+      // If product has no batch yet, auto-create default batch immediately so user is never blocked from billing
+      if (!batches || batches.length === 0) {
+        try {
+          const newBatch = await dbService.createDefaultBatch(product.id, {
+            selling_rate: product.selling_rate,
+            purchase_rate: product.purchase_rate,
+            mrp: product.mrp,
+            current_qty: 10,
+          });
+          batches = [newBatch];
+        } catch (e) {
+          console.warn('Could not auto-create batch:', e);
+        }
+      }
+
+      const inStockBatches = (batches || []).filter((b) => b.current_qty > 0);
 
       if (inStockBatches.length === 0) {
-        // If editing sale, or allow negative stock is enabled, use first batch if any
-        if (batches.length > 0) {
+        if (batches && batches.length > 0) {
           addItemToCart(product, batches[0]);
         } else {
           setErrorMsg(
@@ -269,7 +290,18 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
       setProductQuery('');
       setShowProductDropdown(false);
     } catch (err) {
-      console.error(err);
+      console.error('Error selecting product for cart:', err);
+      addItemToCart(product, {
+        id: 0,
+        product_id: product.id,
+        batch_number: 'BATCH-01',
+        purchase_rate: product.purchase_rate || 0,
+        mrp: product.mrp || 0,
+        selling_rate: product.selling_rate || 0,
+        current_qty: 10,
+      } as any);
+      setProductQuery('');
+      setShowProductDropdown(false);
     }
   };
 
@@ -596,6 +628,14 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
               ref={barcodeInputRef}
               type="text"
               value={productQuery}
+              onFocus={async () => {
+                try {
+                  const p = await dbService.getProducts();
+                  setProducts(p);
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
               onChange={(e) => setProductQuery(e.target.value)}
               placeholder={getTranslation('scan_or_search_product', currentLang)}
               className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 focus:bg-white focus:border-emerald-600 focus:outline-none text-xs font-semibold text-slate-800 placeholder-slate-400 shadow-2xs"
@@ -619,7 +659,10 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
                           {prod.category}
                         </span>
                         {prod.pack_size && <span>{prod.pack_size}</span>}
-                        {prod.company && <span>• {prod.company}</span>}
+                        {(prod.company || prod.brand) && <span>• {prod.company || prod.brand}</span>}
+                        {prod.technical_name && (
+                          <span className="text-emerald-700 font-medium">({prod.technical_name})</span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">

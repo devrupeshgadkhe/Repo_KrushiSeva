@@ -72,6 +72,7 @@ export const dbService = {
     const cleanGst = Number(product.gst_rate) || 0;
     const cleanMinStock = Number(product.min_stock ?? product.low_stock_alert ?? 10);
     const cleanReorder = Number(product.reorder_level ?? product.low_stock_alert ?? 15);
+    const cleanTechnicalName = product.technical_name?.trim() || '';
     const cleanProductCode = product.product_code?.trim() || `PRD-${Math.floor(1000 + Math.random() * 9000)}`;
 
     if (product.id) {
@@ -81,7 +82,7 @@ export const dbService = {
           subcategory = ?, brand = ?, company = ?, unit = ?, pack_size = ?, mrp = ?, 
           purchase_rate = ?, selling_rate = ?, dealer_rate = ?, gst_rate = ?, hsn_code = ?, 
           batch_required = ?, expiry_required = ?, min_stock = ?, reorder_level = ?, 
-          fertilizer_grade = ?, npk_ratio = ?, seed_variety = ?, toxicity_class = ?, 
+          technical_name = ?, fertilizer_grade = ?, npk_ratio = ?, seed_variety = ?, toxicity_class = ?, 
           cib_registration_no = ?, description = ?
         WHERE id = ?`,
         [
@@ -89,7 +90,7 @@ export const dbService = {
           product.subcategory || '', cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
           cleanPurchase, cleanSelling, cleanDealer, cleanGst, cleanHsn,
           product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, cleanMinStock, cleanReorder,
-          product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
+          cleanTechnicalName, product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
           product.cib_registration_no || '', product.description || '', product.id
         ]
       );
@@ -100,20 +101,36 @@ export const dbService = {
         `INSERT INTO products (
           product_code, barcode, name, name_mr, name_hi, category, subcategory, brand, company, 
           unit, pack_size, mrp, purchase_rate, selling_rate, dealer_rate, gst_rate, hsn_code, 
-          batch_required, expiry_required, min_stock, reorder_level, fertilizer_grade, npk_ratio, 
+          batch_required, expiry_required, min_stock, reorder_level, technical_name, fertilizer_grade, npk_ratio, 
           seed_variety, toxicity_class, cib_registration_no, description, active, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
         [
           cleanProductCode, product.barcode || '', cleanName, cleanNameMr, cleanNameHi, cleanCategory,
           product.subcategory || '', cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
           cleanPurchase, cleanSelling, cleanDealer, cleanGst, cleanHsn,
           product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, cleanMinStock, cleanReorder,
-          product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
+          cleanTechnicalName, product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
           product.cib_registration_no || '', product.description || ''
         ]
       );
-      this.logAudit(userName, 'CREATE', 'Product', String(res.lastInsertRowid), `Created product ${cleanName}`);
-      return res.lastInsertRowid;
+      const newProductId = res.lastInsertRowid;
+
+      // Auto-create initial default batch so newly added product is immediately ready for sale in POS
+      try {
+        const initialStock = Number((product as any).opening_stock ?? (product as any).current_stock ?? cleanMinStock ?? 10);
+        sqliteEngine.run(
+          `INSERT INTO product_batches (
+            product_id, batch_number, mfg_date, expiry_date, purchase_rate, mrp, selling_rate,
+            opening_qty, received_qty, sold_qty, current_qty, status
+          ) VALUES (?, 'BATCH-01', date('now'), date('now', '+2 years'), ?, ?, ?, ?, ?, 0, ?, 'Active')`,
+          [newProductId, cleanPurchase, cleanMrp, cleanSelling, initialStock, initialStock, initialStock]
+        );
+      } catch (batchErr) {
+        console.warn('Could not create default batch for new product:', batchErr);
+      }
+
+      this.logAudit(userName, 'CREATE', 'Product', String(newProductId), `Created product ${cleanName}`);
+      return newProductId;
     }
   },
 
@@ -171,6 +188,42 @@ export const dbService = {
 
   async getProductBatches(productId: number): Promise<ProductBatch[]> {
     return this.getBatchesForProduct(productId);
+  },
+
+  async createDefaultBatch(productId: number, options?: Partial<ProductBatch>): Promise<ProductBatch> {
+    await sqliteEngine.getDb();
+    const prod = await this.getProductById(productId);
+    const purchaseRate = options?.purchase_rate ?? prod?.purchase_rate ?? 0;
+    const mrp = options?.mrp ?? prod?.mrp ?? 0;
+    const sellingRate = options?.selling_rate ?? prod?.selling_rate ?? 0;
+    const qty = options?.current_qty ?? 10;
+    const batchNo = options?.batch_number || `BATCH-${Math.floor(100 + Math.random() * 900)}`;
+
+    const res = sqliteEngine.run(
+      `INSERT INTO product_batches (
+        product_id, batch_number, mfg_date, expiry_date, purchase_rate, mrp, selling_rate,
+        opening_qty, received_qty, sold_qty, current_qty, status
+      ) VALUES (?, ?, date('now'), date('now', '+2 years'), ?, ?, ?, ?, ?, 0, ?, 'Active')`,
+      [productId, batchNo, purchaseRate, mrp, sellingRate, qty, qty, qty]
+    );
+
+    return {
+      id: res.lastInsertRowid,
+      product_id: productId,
+      batch_number: batchNo,
+      mfg_date: new Date().toISOString().split('T')[0],
+      expiry_date: new Date(Date.now() + 2 * 365 * 86400000).toISOString().split('T')[0],
+      purchase_rate: purchaseRate,
+      mrp,
+      selling_rate: sellingRate,
+      opening_qty: qty,
+      current_qty: qty,
+      location_id: 1,
+      status: 'Active',
+      product_name: prod?.name || '',
+      category: prod?.category || '',
+      days_to_expiry: 730,
+    };
   },
 
   async getAllBatches(filter = 'ALL'): Promise<ProductBatch[]> {
@@ -398,10 +451,12 @@ export const dbService = {
 
       // 4. Insert Items & Decrement Stock & Record Stock Movements
       for (const item of sale.items) {
-        const prodInfo = sqliteEngine.queryOne<any>(
-          'SELECT company, brand, technical_name, fertilizer_grade, subcategory FROM products WHERE id = ?', 
-          [item.product_id]
-        );
+        let prodInfo: any = null;
+        try {
+          prodInfo = sqliteEngine.queryOne<any>('SELECT * FROM products WHERE id = ?', [item.product_id]);
+        } catch {
+          prodInfo = null;
+        }
         const itemMfg = item.mfg || prodInfo?.company || prodInfo?.brand || '';
         const itemContent = item.content || prodInfo?.technical_name || prodInfo?.fertilizer_grade || prodInfo?.subcategory || '';
 
@@ -714,10 +769,12 @@ export const dbService = {
 
       // 7. Insert New Sale Items & Deduct Stock & Update Statutory records
       for (const item of sale.items) {
-        const prodInfo = sqliteEngine.queryOne<any>(
-          'SELECT company, brand, technical_name, fertilizer_grade, subcategory FROM products WHERE id = ?', 
-          [item.product_id]
-        );
+        let prodInfo: any = null;
+        try {
+          prodInfo = sqliteEngine.queryOne<any>('SELECT * FROM products WHERE id = ?', [item.product_id]);
+        } catch {
+          prodInfo = null;
+        }
         const itemMfg = item.mfg || prodInfo?.company || prodInfo?.brand || '';
         const itemContent = item.content || prodInfo?.technical_name || prodInfo?.fertilizer_grade || prodInfo?.subcategory || '';
 
