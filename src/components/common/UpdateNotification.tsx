@@ -18,6 +18,8 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ currentL
   const isMr = currentLang === 'mr';
   const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
   const [minimized, setMinimized] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+  const [autoRestartPaused, setAutoRestartPaused] = useState(false);
 
   useEffect(() => {
     // Initialize update service
@@ -26,6 +28,27 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ currentL
     const unsub = updateService.subscribe(setUpdateState);
     return unsub;
   }, []);
+
+  // Automated installation countdown when update is ready (Zero Manual Intervention)
+  useEffect(() => {
+    if (!updateState.updateReady || autoRestartPaused) {
+      return;
+    }
+
+    setCountdown(5);
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          updateService.restartAndInstall();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [updateState.updateReady, autoRestartPaused]);
 
   // Strict requirement: Only Windows Desktop (Electron) receives auto-updates
   if (!updateState.isElectron) {
@@ -134,11 +157,29 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ currentL
 
       {/* Update Ready Notice */}
       {updateState.updateReady && (
-        <p className="text-[11px] text-emerald-300 mb-3 bg-emerald-950/60 p-2.5 rounded-xl border border-emerald-800/60">
-          {isMr 
-            ? 'अपडेट यशस्वीरित्या डाऊनलोड झाले आहे. ॲप रीस्टार्ट झाल्यावर नवीन व्हर्जन आपोआप लागू होईल.'
-            : 'Update downloaded successfully. Restart now or on next app launch to apply.'}
-        </p>
+        <div className="mb-3 bg-emerald-950/70 p-3 rounded-xl border border-emerald-600/50 space-y-1.5">
+          <p className="text-[12px] font-semibold text-emerald-200 leading-snug">
+            {isMr 
+              ? `नवीन व्हर्जन (v${updateState.latestVersion || ''}) डाऊनलोड झाले आहे!`
+              : `New version (v${updateState.latestVersion || ''}) downloaded!`}
+          </p>
+          {!autoRestartPaused ? (
+            <p className="text-[11px] text-emerald-300 font-mono flex items-center gap-1">
+              <span>⚡</span>
+              <span>
+                {isMr 
+                  ? `सॉफ्टवेअर ${countdown} सेकंदात आपोआप अपडेट होऊन रीस्टार्ट होईल...` 
+                  : `Updating and restarting automatically in ${countdown}s...`}
+              </span>
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-300">
+              {isMr 
+                ? 'ऑटो-रीस्टार्ट तात्पुरता थांबवला आहे. खालील बटनावर क्लिक करून कधीही अपडेट करू शकता.'
+                : 'Auto-restart postponed. Click below to restart and apply anytime.'}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Error Message if any */}
@@ -149,21 +190,32 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ currentL
       )}
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-slate-800">
+      <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-800">
         {updateState.updateReady ? (
-          <button
-            type="button"
-            onClick={handleRestart}
-            className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition-colors"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>{isMr ? 'आता रीस्टार्ट करा (Restart Now)' : 'Restart & Apply Update'}</span>
-          </button>
+          <>
+            {!autoRestartPaused && (
+              <button
+                type="button"
+                onClick={() => setAutoRestartPaused(true)}
+                className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
+              >
+                {isMr ? 'नंतर करा' : 'Postpone'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleRestart}
+              className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{isMr ? `आत्ताच अपडेट करा (${countdown}s)` : `Update Now (${countdown}s)`}</span>
+            </button>
+          </>
         ) : (
           <button
             type="button"
             onClick={() => setMinimized(true)}
-            className="py-1 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+            className="py-1 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer ml-auto"
           >
             {isMr ? 'लपवा (Minimize)' : 'Minimize'}
           </button>

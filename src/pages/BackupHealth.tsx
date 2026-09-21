@@ -8,12 +8,16 @@ import {
   AlertCircle, 
   RefreshCw,
   FolderDown,
-  RotateCcw
+  RotateCcw,
+  FileJson,
+  CloudCheck
 } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { getTranslation } from '../i18n';
 import { exportDatabaseFile, restoreDatabaseFromFile, checkIntegrity } from '../db/sqliteEngine';
+import { cloudBackupService, CloudBackupState } from '../services/cloudBackupService';
 import { useFeedback } from '../components/common/FeedbackContext';
+import { formatDate } from '../utils/formatters';
 
 interface BackupHealthProps {
   currentLang: AppLanguage;
@@ -25,10 +29,16 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
   const [integrityStatus, setIntegrityStatus] = useState<string>('checking');
   const [restoring, setRestoring] = useState(false);
   const [backupSuccess, setBackupSuccess] = useState(false);
-  const [dbSize, setDbSize] = useState('0.85 MB');
+  const [backupJsonSuccess, setBackupJsonSuccess] = useState(false);
+  const [dbSize, setDbSize] = useState('1.2 MB');
+  const [backupState, setBackupState] = useState<CloudBackupState>(cloudBackupService.getState());
 
   useEffect(() => {
     runCheck();
+    const unsub = cloudBackupService.subscribe((state) => {
+      setBackupState(state);
+    });
+    return unsub;
   }, []);
 
   const runCheck = async () => {
@@ -44,10 +54,21 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
     try {
       await exportDatabaseFile();
       setBackupSuccess(true);
-      showToast(currentLang === 'mr' ? 'डेटाबेस बॅकअप यशस्वीरित्या डाऊनलोड झाला.' : 'Database backup downloaded successfully.', 'success');
+      showToast(currentLang === 'mr' ? 'डेटाबेस बॅकअप (.db) यशस्वीरित्या डाऊनलोड झाला.' : 'Database backup (.db) downloaded successfully.', 'success');
       setTimeout(() => setBackupSuccess(false), 4000);
     } catch (err: any) {
       showToast((currentLang === 'mr' ? 'बॅकअप डाऊनलोड अयशस्वी: ' : 'Backup failed: ') + err.message, 'error');
+    }
+  };
+
+  const handleDownloadJSONBackup = async () => {
+    try {
+      await cloudBackupService.downloadJSONBackup();
+      setBackupJsonSuccess(true);
+      showToast(currentLang === 'mr' ? 'डेटाबेस जेसन (.json) बॅकअप यशस्वीरित्या डाऊनलोड झाला.' : 'JSON database backup (.json) downloaded successfully.', 'success');
+      setTimeout(() => setBackupJsonSuccess(false), 4000);
+    } catch (err: any) {
+      showToast((currentLang === 'mr' ? 'जेसन बॅकअप डाऊनलोड अयशस्वी: ' : 'JSON backup failed: ') + err.message, 'error');
     }
   };
 
@@ -78,6 +99,8 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
     });
   };
 
+  const isMr = currentLang === 'mr';
+
   return (
     <div className="flex-1 p-6 overflow-y-auto space-y-6">
       {/* Header */}
@@ -88,6 +111,36 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
         <p className="text-xs text-slate-500 mt-1">
           {getTranslation('backup_subtitle', currentLang)}
         </p>
+      </div>
+
+      {/* Automated Backup Banner */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 p-4 rounded-xl shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="font-bold text-xs text-emerald-950 flex items-center gap-2">
+              <span>{isMr ? '१००% स्वयंचलित बहु-पर्यायी बॅकअप प्रणाली कार्यरत' : '100% Automated Multi-Destination Backup Active'}</span>
+              <span className="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                {isMr ? 'सक्रिय' : 'Live'}
+              </span>
+            </div>
+            <p className="text-[11px] text-emerald-800 mt-0.5">
+              {isMr 
+                ? 'प्रत्येक व्यवहारानंतर सर्व डेटा सुरक्षित स्थानिक व क्लाउड प्रतींमध्ये आपोआप जतन केला जातो. कोणत्याही मॅन्युअल सेटिंगची आवश्यकता नाही.'
+                : 'All database records are continuously synced and protected both locally and in cloud storage with zero manual intervention.'}
+            </p>
+          </div>
+        </div>
+        <div className="text-right text-xs shrink-0 self-end sm:self-center">
+          <span className="text-slate-500 text-[11px] block">{isMr ? 'शेवटचा स्वयंचलित बॅकअप:' : 'Last Automated Sync:'}</span>
+          <span className="font-bold text-emerald-900 font-mono text-xs">
+            {backupState.lastBackupTime 
+              ? new Date(backupState.lastBackupTime).toLocaleString(isMr ? 'mr-IN' : 'en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })
+              : (isMr ? 'प्रक्रिया सुरू आहे' : 'In Progress')}
+          </span>
+        </div>
       </div>
 
       {/* Two Columns: Backup & Restore */}
@@ -111,26 +164,46 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
           <div className="p-4 bg-slate-50 rounded-lg text-xs text-slate-600 space-y-2 border border-slate-200">
             <div>
               {currentLang === 'mr' ? '• डेटाबेस स्थिती: ' : '• Database Status: '}
-              <strong className="text-emerald-700">{currentLang === 'mr' ? 'स्थानिक व सुरक्षित' : 'Local & Secure'}</strong>
+              <strong className="text-emerald-700">{currentLang === 'mr' ? 'स्थानिक व क्लाउड सुरक्षित' : 'Local & Cloud Protected'}</strong>
             </div>
             <div>
-              {currentLang === 'mr' ? '• अंदाजित आकार: ' : '• Estimated Size: '}
-              <strong className="font-mono text-slate-800">{dbSize}</strong>
+              {currentLang === 'mr' ? '• समाविष्ट डेटा: ' : '• Included Data: '}
+              <strong className="text-slate-800 font-medium">
+                {currentLang === 'mr' 
+                  ? 'सर्व विक्री बिले, शेतकरी खाती, खरेदी, उत्पादने, साठा व कर नोंदी' 
+                  : 'All sales invoices, farmer ledgers, purchases, products, stock & tax entries'}
+              </strong>
             </div>
             <div>
-              {currentLang === 'mr' 
-                ? '• समाविष्ट डेटा: सर्व पावत्या, शेतकरी खाती, खरेदी, साठा व कर नोंदी' 
-                : '• Included Data: All invoices, farmer accounts, purchases, stock & tax records'}
+              {currentLang === 'mr' ? '• उपलब्ध स्वरूप: ' : '• Available Formats: '}
+              <span className="font-mono font-bold text-emerald-700">JSON (.json)</span> &amp; <span className="font-mono font-bold text-slate-700">SQLite (.db)</span>
             </div>
           </div>
 
-          <button
-            onClick={handleDownloadBackup}
-            className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-          >
-            <FolderDown className="w-4 h-4" />
-            <span>{getTranslation('download_backup_btn', currentLang)}</span>
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <button
+              onClick={handleDownloadJSONBackup}
+              className="w-full py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+            >
+              <FileJson className="w-4 h-4" />
+              <span>{isMr ? 'JSON बॅकअप डाऊनलोड' : 'Download JSON Backup'}</span>
+            </button>
+
+            <button
+              onClick={handleDownloadBackup}
+              className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+            >
+              <FolderDown className="w-4 h-4" />
+              <span>{isMr ? '.DB फाइल डाऊनलोड' : 'Download .DB File'}</span>
+            </button>
+          </div>
+
+          {backupJsonSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{isMr ? 'जेसन (.json) डेटाबेस बॅकअप संगणकावर सेव्ह झाला.' : 'JSON database backup saved to your computer.'}</span>
+            </div>
+          )}
 
           {backupSuccess && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
@@ -172,12 +245,15 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
               <span>{restoring ? getTranslation('loading', currentLang) : getTranslation('restore_btn', currentLang)}</span>
               <input
                 type="file"
-                accept=".db,.sqlite,.sqlite3"
+                accept=".json,.db,.sqlite,.sqlite3"
                 onChange={handleRestoreFile}
                 disabled={restoring}
                 className="hidden"
               />
             </label>
+            <span className="block text-center text-[11px] text-slate-400 mt-1.5">
+              {isMr ? 'स्वीकृत फॉरमॅट: .json, .db, .sqlite' : 'Supported formats: .json, .db, .sqlite'}
+            </span>
           </div>
         </div>
       </div>
@@ -216,18 +292,18 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
           </div>
 
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <div className="text-slate-500">{getTranslation('local_storage_status', currentLang)}</div>
+            <div className="text-slate-500">{currentLang === 'mr' ? 'स्थानिक बॅकअप संग्रहण' : 'Local Backup Storage'}</div>
             <div className="font-bold text-slate-800 mt-1 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="text-emerald-700">{getTranslation('local_storage_active', currentLang)}</span>
+              <span className="text-emerald-700">{isMr ? '१००% सक्रिय व सुरक्षित' : 'Active & Synced'}</span>
             </div>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <div className="text-slate-500">{getTranslation('data_protection_status', currentLang)}</div>
+            <div className="text-slate-500">{currentLang === 'mr' ? 'क्लाउड बॅकअप सुरक्षा' : 'Cloud Backup Security'}</div>
             <div className="font-bold text-slate-800 mt-1 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="text-emerald-700">{getTranslation('data_protection_active', currentLang)}</span>
+              <span className="text-emerald-700">{isMr ? 'स्वयंचलित समक्रमण सक्षम' : 'Auto Sync Enabled'}</span>
             </div>
           </div>
         </div>

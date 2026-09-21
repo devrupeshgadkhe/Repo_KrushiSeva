@@ -42,8 +42,8 @@ export const dbService = {
     }
     if (search.trim()) {
       const q = `%${search.trim()}%`;
-      sql += ' AND (name LIKE ? OR name_mr LIKE ? OR product_code LIKE ? OR barcode LIKE ? OR brand LIKE ?)';
-      params.push(q, q, q, q, q);
+      sql += ' AND (name LIKE ? OR name_mr LIKE ? OR name_hi LIKE ? OR product_code LIKE ? OR barcode LIKE ? OR brand LIKE ? OR company LIKE ? OR technical_name LIKE ? OR fertilizer_grade LIKE ? OR subcategory LIKE ?)';
+      params.push(q, q, q, q, q, q, q, q, q, q);
     }
     sql += ' ORDER BY name ASC';
     return sqliteEngine.query<Product>(sql, params);
@@ -117,7 +117,11 @@ export const dbService = {
 
       // Auto-create initial default batch so newly added product is immediately ready for sale in POS
       try {
-        const initialStock = Number((product as any).opening_stock ?? (product as any).current_stock ?? cleanMinStock ?? 10);
+        const rawStock = (product as any).opening_stock ?? (product as any).current_stock;
+        const initialStock = (rawStock !== undefined && rawStock !== null && rawStock !== '') 
+          ? Math.max(0, Number(rawStock)) 
+          : Math.max(10, cleanMinStock || 10);
+
         sqliteEngine.run(
           `INSERT INTO product_batches (
             product_id, batch_number, mfg_date, expiry_date, purchase_rate, mrp, selling_rate,
@@ -459,15 +463,16 @@ export const dbService = {
         }
         const itemMfg = item.mfg || prodInfo?.company || prodInfo?.brand || '';
         const itemContent = item.content || prodInfo?.technical_name || prodInfo?.fertilizer_grade || prodInfo?.subcategory || '';
+        const itemTechName = (item as any).technical_name || prodInfo?.technical_name || itemContent || '';
 
         sqliteEngine.run(
           `INSERT INTO sale_items (
-            sale_id, product_id, product_name, product_code, hsn_code, mfg, company, content, batch_id, batch_number, 
+            sale_id, product_id, product_name, product_code, hsn_code, mfg, company, content, technical_name, batch_id, batch_number, 
             expiry_date, unit, pack_size, quantity, rate, mrp, discount_percent, discount_amount, 
             taxable_value, gst_rate, cgst_amount, sgst_amount, igst_amount, total_tax, total_amount
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            saleId, item.product_id, item.product_name, item.product_code, item.hsn_code, itemMfg, itemMfg, itemContent,
+            saleId, item.product_id, item.product_name, item.product_code, item.hsn_code, itemMfg, itemMfg, itemContent, itemTechName,
             item.batch_id || null, item.batch_number || '', item.expiry_date || '', item.unit,
             item.pack_size || '', item.quantity, item.rate, item.mrp, item.discount_percent,
             item.discount_amount, item.taxable_value, item.gst_rate, item.cgst_amount,
@@ -777,15 +782,16 @@ export const dbService = {
         }
         const itemMfg = item.mfg || prodInfo?.company || prodInfo?.brand || '';
         const itemContent = item.content || prodInfo?.technical_name || prodInfo?.fertilizer_grade || prodInfo?.subcategory || '';
+        const itemTechName = (item as any).technical_name || prodInfo?.technical_name || itemContent || '';
 
         sqliteEngine.run(
           `INSERT INTO sale_items (
-            sale_id, product_id, product_name, product_code, hsn_code, mfg, company, content, batch_id, batch_number, 
+            sale_id, product_id, product_name, product_code, hsn_code, mfg, company, content, technical_name, batch_id, batch_number, 
             expiry_date, unit, pack_size, quantity, rate, mrp, discount_percent, discount_amount, 
             taxable_value, gst_rate, cgst_amount, sgst_amount, igst_amount, total_tax, total_amount
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            id, item.product_id, item.product_name, item.product_code, item.hsn_code, itemMfg, itemMfg, itemContent,
+            id, item.product_id, item.product_name, item.product_code, item.hsn_code, itemMfg, itemMfg, itemContent, itemTechName,
             item.batch_id || null, item.batch_number || '', item.expiry_date || '', item.unit,
             item.pack_size || '', item.quantity, item.rate, item.mrp, item.discount_percent,
             item.discount_amount, item.taxable_value, item.gst_rate, item.cgst_amount,

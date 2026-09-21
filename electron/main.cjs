@@ -9,11 +9,28 @@ const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
 let downloadedDirectInstaller = null;
+let isDownloading = false;
+let isUpdateReady = false;
+let latestDetectedVersion = null;
+let periodicCheckTimer = null;
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
 // Configure Auto-Updater - auto download enabled so no manual button is needed
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.allowPrerelease = false;
+autoUpdater.allowDowngrade = false;
+try {
+  autoUpdater.logger = console;
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'devrupeshgadkhe',
+    repo: 'Repo_KrushiSeva',
+    private: false,
+  });
+} catch (e) {
+  console.warn('[AutoUpdater] Feed URL configuration note:', e.message);
+}
 
 function sendToWindow(channel, data) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -21,12 +38,115 @@ function sendToWindow(channel, data) {
   }
 }
 
+// Compare semantic version strings (e.g. '1.0.12' vs '1.0.13')
+function isNewerVersion(current, latest) {
+  if (!current || !latest) return false;
+  const cleanCurrent = String(current).replace(/^v/, '').trim();
+  const cleanLatest = String(latest).replace(/^v/, '').trim();
+  if (cleanCurrent === cleanLatest) return false;
+
+  const cParts = cleanCurrent.split('.').map((p) => parseInt(p, 10) || 0);
+  const lParts = cleanLatest.split('.').map((p) => parseInt(p, 10) || 0);
+
+  for (let i = 0; i < Math.max(cParts.length, lParts.length); i++) {
+    const c = cParts[i] || 0;
+    const l = lParts[i] || 0;
+    if (l > c) return true;
+    if (l < c) return false;
+  }
+  return false;
+}
+
+// Direct check against latest.yml on GitHub Releases CDN (no GitHub API rate limit!)
+function checkLatestYmlUpdate() {
+  const latestYmlUrl = `https://github.com/devrupeshgadkhe/Repo_KrushiSeva/releases/latest/download/latest.yml?t=${Date.now()}`;
+  
+  const follow = (url, count = 0) => {
+    if (count > 6) return;
+    try {
+      const parsed = new URL(url);
+      const client = parsed.protocol === 'https:' ? https : http;
+      client.get(url, { headers: { 'User-Agent': 'KrushiSevaERP-AutoUpdater' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return follow(res.headers.location, count + 1);
+        }
+        if (res.statusCode !== 200) return;
+
+        let content = '';
+        res.on('data', chunk => { content += chunk; });
+        res.on('end', () => {
+          try {
+            const verMatch = content.match(/version:\s*([^\s\r\n]+)/);
+            if (!verMatch || !verMatch[1]) return;
+            const remoteVersion = verMatch[1].trim();
+            latestDetectedVersion = remoteVersion;
+
+            const pathMatch = content.match(/path:\s*([^\s\r\n]+)/) || content.match(/url:\s*([^\s\r\n]+)/);
+            const exeFileName = pathMatch ? pathMatch[1].trim() : `Krushi-Seva-ERP-Setup-${remoteVersion}.exe`;
+
+            const currentVersion = app.getVersion();
+            if (isNewerVersion(currentVersion, remoteVersion)) {
+              console.log(`[AutoUpdater] Direct latest.yml detected newer version: v${remoteVersion} (current: v${currentVersion})`);
+              sendToWindow('update-available', {
+                version: remoteVersion,
+                releaseNotes: `New release v${remoteVersion} available`,
+              });
+
+              // Automatically start background download without requiring manual intervention
+              if (!isDownloading && !isUpdateReady) {
+                const downloadUrl = `https://github.com/devrupeshgadkhe/Repo_KrushiSeva/releases/download/v${remoteVersion}/${exeFileName}`;
+                console.log(`[AutoUpdater] Starting automated direct asset download from: ${downloadUrl}`);
+                downloadDirectAsset(downloadUrl, remoteVersion);
+              }
+            } else {
+              console.log(`[AutoUpdater] App is up to date (current: v${currentVersion}, remote: v${remoteVersion})`);
+              sendToWindow('update-not-available', { version: currentVersion });
+            }
+          } catch (e) {
+            console.warn('[AutoUpdater] Failed parsing latest.yml response:', e.message);
+          }
+        });
+      }).on('error', (err) => {
+        console.warn('[AutoUpdater] latest.yml network check error:', err.message);
+      });
+    } catch (err) {
+      console.warn('[AutoUpdater] latest.yml URL error:', err.message);
+    }
+  };
+
+  follow(latestYmlUrl);
+}
+
+// Master updater trigger: runs electron-updater AND latest.yml check
+function triggerUpdateCheck() {
+  if (isDownloading || isUpdateReady) return;
+  console.log('[AutoUpdater] Triggering update check...');
+  sendToWindow('update-checking', {});
+
+  if (app.isPackaged) {
+    try {
+      autoUpdater.checkForUpdates().catch((err) => {
+        console.warn('[AutoUpdater] autoUpdater.checkForUpdates warning:', err.message);
+      });
+    } catch (e) {
+      console.warn('[AutoUpdater] autoUpdater call error:', e.message);
+    }
+  }
+
+  // Always perform direct latest.yml check
+  checkLatestYmlUpdate();
+}
+
 // Helper to download direct installer from GitHub Release asset (handles redirects)
 function downloadDirectAsset(url, targetVersion) {
+  if (isDownloading) return;
+  isDownloading = true;
+
   const tempFile = path.join(os.tmpdir(), `Krushi-Seva-Setup-${targetVersion || 'latest'}.exe`);
   
   const follow = (currentUrl, redirectCount = 0) => {
-    if (redirectCount > 6) {
+    if (redirectCount > 8) {
+      isDownloading = false;
       sendToWindow('update-error', { message: 'Too many redirects during update download' });
       return;
     }
@@ -43,6 +163,7 @@ function downloadDirectAsset(url, targetVersion) {
         }
         
         if (res.statusCode !== 200) {
+          isDownloading = false;
           sendToWindow('update-error', { message: `Update download failed with HTTP status ${res.statusCode}` });
           return;
         }
@@ -57,7 +178,7 @@ function downloadDirectAsset(url, targetVersion) {
         res.on('data', (chunk) => {
           transferred += chunk.length;
           const now = Date.now();
-          if (now - lastTime >= 350 || transferred === total) {
+          if (now - lastTime >= 300 || transferred === total) {
             const deltaSec = (now - lastTime) / 1000;
             const bytesPerSecond = deltaSec > 0 ? (transferred - lastTransferred) / deltaSec : 0;
             const percent = total > 0 ? Math.min(100, Math.round((transferred / total) * 100)) : 0;
@@ -76,21 +197,27 @@ function downloadDirectAsset(url, targetVersion) {
 
         fileStream.on('finish', () => {
           fileStream.close(() => {
+            isDownloading = false;
+            isUpdateReady = true;
             downloadedDirectInstaller = tempFile;
-            sendToWindow('update-downloaded', { version: targetVersion });
+            console.log(`[AutoUpdater] Download completed to ${tempFile}, notifying renderer`);
+            sendToWindow('update-downloaded', { version: targetVersion || latestDetectedVersion });
           });
         });
 
         fileStream.on('error', (err) => {
+          isDownloading = false;
           fs.unlink(tempFile, () => {});
           sendToWindow('update-error', { message: err.message || 'File write error during update' });
         });
       });
 
       req.on('error', (err) => {
+        isDownloading = false;
         sendToWindow('update-error', { message: err.message || 'Network error during update' });
       });
     } catch (e) {
+      isDownloading = false;
       sendToWindow('update-error', { message: e.message || 'Error initiating download' });
     }
   };
@@ -129,14 +256,21 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     clearTimeout(showFallback);
     mainWindow.show();
-    // Check for updates shortly after launch if packaged
-    if (app.isPackaged) {
-      setTimeout(() => {
-        autoUpdater.checkForUpdates().catch((err) => {
-          console.error('Initial update check error:', err);
-        });
-      }, 5000);
-    }
+    // Check for updates shortly after launch
+    setTimeout(() => {
+      triggerUpdateCheck();
+    }, 3000);
+
+    // Periodic check every 60 seconds whenever internet is active
+    if (periodicCheckTimer) clearInterval(periodicCheckTimer);
+    periodicCheckTimer = setInterval(() => {
+      triggerUpdateCheck();
+    }, 60 * 1000);
+  });
+
+  // Re-check for updates whenever window regains user focus
+  mainWindow.on('focus', () => {
+    triggerUpdateCheck();
   });
 
   // Enable F12 or Ctrl+Shift+I to toggle DevTools if ever needed
@@ -168,6 +302,10 @@ function createWindow() {
   Menu.setApplicationMenu(null);
 
   mainWindow.on('closed', () => {
+    if (periodicCheckTimer) {
+      clearInterval(periodicCheckTimer);
+      periodicCheckTimer = null;
+    }
     mainWindow = null;
   });
 }
@@ -182,7 +320,8 @@ autoUpdater.on('checking-for-update', () => {
 });
 
 autoUpdater.on('update-available', (info) => {
-  console.log('[AutoUpdater] Update available:', info.version);
+  console.log('[AutoUpdater] Update available via autoUpdater:', info.version);
+  latestDetectedVersion = info.version;
   sendToWindow('update-available', {
     version: info.version,
     releaseDate: info.releaseDate,
@@ -198,10 +337,8 @@ autoUpdater.on('update-not-available', (info) => {
 });
 
 autoUpdater.on('error', (err) => {
-  console.error('[AutoUpdater] Error in auto-updater:', err);
-  sendToWindow('update-error', {
-    message: err == null ? 'Unknown update error' : (err.message || err.toString()),
-  });
+  console.warn('[AutoUpdater] autoUpdater error:', err && err.message ? err.message : err);
+  // Do not show disruptive modal on background check fail; direct latest.yml check handles fallback
 });
 
 autoUpdater.on('download-progress', (progressObj) => {
@@ -215,9 +352,11 @@ autoUpdater.on('download-progress', (progressObj) => {
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-  console.log('[AutoUpdater] Update downloaded successfully:', info.version);
+  console.log('[AutoUpdater] Update downloaded successfully via autoUpdater:', info.version);
+  isUpdateReady = true;
+  isDownloading = false;
   sendToWindow('update-downloaded', {
-    version: info.version,
+    version: info.version || latestDetectedVersion,
   });
 });
 
@@ -234,18 +373,11 @@ ipcMain.handle('is-electron', () => {
 });
 
 ipcMain.handle('check-for-updates', async () => {
-  if (!app.isPackaged) {
-    return {
-      status: 'dev_mode',
-      message: 'Running in development mode. Updates are enabled in release build.',
-      version: app.getVersion(),
-    };
-  }
   try {
-    const result = await autoUpdater.checkForUpdates();
+    triggerUpdateCheck();
     return {
-      status: 'success',
-      updateInfo: result ? result.updateInfo : null,
+      status: 'checking',
+      version: app.getVersion(),
     };
   } catch (error) {
     return {
@@ -277,19 +409,116 @@ ipcMain.handle('download-and-install-direct', async (_event, { downloadUrl, vers
 });
 
 ipcMain.handle('quit-and-install', () => {
+  console.log('[AutoUpdater] quit-and-install triggered');
   if (downloadedDirectInstaller && fs.existsSync(downloadedDirectInstaller)) {
     try {
-      const child = spawn(downloadedDirectInstaller, [], { detached: true, stdio: 'ignore' });
+      console.log(`[AutoUpdater] Launching silent NSIS installer: ${downloadedDirectInstaller}`);
+      // Launch installer silently (/S) so it installs without requiring manual next-clicks
+      const child = spawn(downloadedDirectInstaller, ['/S'], { detached: true, stdio: 'ignore' });
       child.unref();
       setTimeout(() => {
         app.quit();
       }, 600);
       return;
     } catch (e) {
-      console.error('Failed to launch downloaded installer:', e);
+      console.error('Failed to launch downloaded silent installer:', e);
     }
   }
-  autoUpdater.quitAndInstall();
+
+  try {
+    autoUpdater.quitAndInstall(true, true);
+  } catch (err) {
+    console.error('autoUpdater.quitAndInstall error:', err);
+  }
+});
+
+// ============================================
+// Automated Backup: Local & Cloud Synchronization
+// ============================================
+ipcMain.handle('send-cloud-backup', async (_event, payload) => {
+  const result = { localSaved: false, cloudSaved: false, localPath: '', message: '', timestamp: new Date().toISOString() };
+
+  // 1. Save locally to app data / backups directory in desktop app
+  try {
+    const backupDir = path.join(app.getPath('userData'), 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    const filename = payload.filename || `krushi_seva_erp_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    const localFilePath = path.join(backupDir, filename);
+    const content = typeof payload.content === 'string' ? payload.content : JSON.stringify(payload.data || payload, null, 2);
+    fs.writeFileSync(localFilePath, content, 'utf8');
+    result.localSaved = true;
+    result.localPath = localFilePath;
+
+    // Keep only last 15 local backup files to conserve disk space
+    try {
+      const files = fs.readdirSync(backupDir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => ({ name: f, time: fs.statSync(path.join(backupDir, f)).mtime.getTime() }))
+        .sort((a, b) => b.time - a.time);
+      if (files.length > 15) {
+        for (let i = 15; i < files.length; i++) {
+          fs.unlinkSync(path.join(backupDir, files[i].name));
+        }
+      }
+    } catch (cleanErr) {
+      console.warn('Backup cleanup error:', cleanErr);
+    }
+  } catch (localErr) {
+    console.warn('Local backup save error:', localErr);
+  }
+
+  // 2. Transmit to Google Apps Script / Google Drive
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyAYKVB5xsVTtyKjQv1R-9sSRKsCJo8VZFHZPgqCaKOHZYpbRQJI_PgFvGACKZ32r8/exec';
+  try {
+    const dataStr = JSON.stringify(payload);
+    const cloudRes = await new Promise((resolve) => {
+      const parsed = new URL(GAS_URL);
+      const options = {
+        hostname: parsed.hostname,
+        path: parsed.pathname + parsed.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+          'Content-Length': Buffer.byteLength(dataStr)
+        },
+        timeout: 20000
+      };
+
+      const req = https.request(options, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          https.get(res.headers.location, (redRes) => {
+            let body = '';
+            redRes.on('data', chunk => body += chunk);
+            redRes.on('end', () => resolve({ success: true, status: redRes.statusCode }));
+          }).on('error', (err) => resolve({ success: false, message: err.message }));
+          return;
+        }
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          resolve({ success: res.statusCode >= 200 && res.statusCode < 400, status: res.statusCode });
+        });
+      });
+
+      req.on('error', (err) => resolve({ success: false, message: err.message }));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ success: false, message: 'Timeout' });
+      });
+      req.write(dataStr);
+      req.end();
+    });
+
+    result.cloudSaved = cloudRes.success;
+    result.status = cloudRes.status;
+  } catch (cloudErr) {
+    result.cloudSaved = false;
+    result.message = cloudErr.message;
+  }
+
+  return { success: result.localSaved || result.cloudSaved, ...result };
 });
 
 // App Lifecycle

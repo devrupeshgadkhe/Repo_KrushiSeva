@@ -356,6 +356,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
   mfg TEXT,
   company TEXT,
   content TEXT,
+  technical_name TEXT,
   batch_id INTEGER,
   batch_number TEXT,
   expiry_date TEXT,

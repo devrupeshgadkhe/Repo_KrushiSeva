@@ -19,6 +19,7 @@ export interface ElectronAPI {
   downloadUpdate: () => Promise<{ status: string; message?: string }>;
   downloadAndInstallDirect?: (downloadUrl: string, version: string) => Promise<{ status: string; message?: string }>;
   quitAndInstall: () => Promise<void>;
+  sendCloudBackup?: (payload: any) => Promise<{ success: boolean; status?: number; message?: string; localSaved?: boolean; cloudSaved?: boolean }>;
 
   onUpdateChecking: (callback: (data: any) => void) => () => void;
   onUpdateAvailable: (callback: (info: ElectronUpdateInfo) => void) => () => void;

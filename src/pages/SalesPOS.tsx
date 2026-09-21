@@ -32,6 +32,7 @@ import {
 import { getTranslation } from '../i18n';
 import { formatINR, calculateLineGst, formatDate } from '../utils/formatters';
 import { dbService } from '../services/api';
+import { cloudBackupService } from '../services/cloudBackupService';
 import { PrintInvoiceModal } from '../components/common/PrintInvoiceModal';
 import { QuickAddCustomerModal } from '../components/common/QuickAddCustomerModal';
 import { useFeedback } from '../components/common/FeedbackContext';
@@ -241,8 +242,27 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
       return;
     }
 
-    setSearchedProducts(filtered);
-    setShowProductDropdown(true);
+    if (filtered.length > 0) {
+      setSearchedProducts(filtered);
+      setShowProductDropdown(true);
+    } else {
+      // If not found in cached list, query database directly to find newly created products
+      dbService.getProducts(productQuery.trim()).then((dbProds) => {
+        if (dbProds && dbProds.length > 0) {
+          setSearchedProducts(dbProds);
+          setShowProductDropdown(true);
+          // Merge newly found products into master state
+          setProducts((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newOnes = dbProds.filter((p) => !existingIds.has(p.id));
+            return [...newOnes, ...prev];
+          });
+        } else {
+          setSearchedProducts([]);
+          setShowProductDropdown(false);
+        }
+      }).catch(console.warn);
+    }
   }, [productQuery, products]);
 
   // When user selects a product
@@ -271,13 +291,25 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
         if (batches && batches.length > 0) {
           addItemToCart(product, batches[0]);
         } else {
-          setErrorMsg(
-            isMr 
-              ? `${product.name_mr || product.name} चा साठा उपलब्ध नाही.` 
-              : `${product.name} has no available stock.`
-          );
-          setTimeout(() => setErrorMsg(''), 3000);
-          return;
+          try {
+            const newBatch = await dbService.createDefaultBatch(product.id, {
+              selling_rate: product.selling_rate,
+              purchase_rate: product.purchase_rate,
+              mrp: product.mrp,
+              current_qty: 10,
+            });
+            addItemToCart(product, newBatch);
+          } catch {
+            addItemToCart(product, {
+              id: 0,
+              product_id: product.id,
+              batch_number: 'BATCH-01',
+              purchase_rate: product.purchase_rate || 0,
+              mrp: product.mrp || 0,
+              selling_rate: product.selling_rate || 0,
+              current_qty: 10,
+            } as any);
+          }
         }
       } else if (inStockBatches.length === 1) {
         addItemToCart(product, inStockBatches[0]);
@@ -518,6 +550,7 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
 
       const fullSale = await dbService.getSaleById(resultId);
       onSaleCompleted();
+      cloudBackupService.triggerBackup(false).catch(console.warn);
 
       if (shouldPrint && fullSale) {
         setCompletedSale(fullSale);

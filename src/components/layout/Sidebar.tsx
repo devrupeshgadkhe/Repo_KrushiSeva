@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   ShoppingCart, 
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { AppLanguage } from '../../types';
 import { getTranslation } from '../../i18n';
-import { updateService } from '../../services/updateService';
+import { updateService, UpdateState } from '../../services/updateService';
 
 export type NavItemKey = 
   | 'dashboard'
@@ -56,6 +56,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   lowStockCount = 0,
   expiringCount = 0,
 }) => {
+  const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+
+  useEffect(() => {
+    const unsub = updateService.subscribe(setUpdateState);
+    return unsub;
+  }, []);
+
   const navItems: { key: NavItemKey; labelKey: any; icon: any; badge?: number; badgeColor?: string }[] = [
     { key: 'dashboard', labelKey: 'nav_dashboard', icon: LayoutDashboard },
     { key: 'pos', labelKey: 'nav_pos', icon: ShoppingCart },
@@ -130,7 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-2 border-t border-slate-800 flex items-center justify-between">
         {!collapsed && (
           <div className="text-[10px] text-slate-400 px-2 font-mono flex items-center gap-1.5">
-            <span className="font-bold text-emerald-400">v{updateService.getState().currentVersion}</span>
+            <span className="font-bold text-emerald-400">v{updateState.currentVersion}</span>
             <span className="text-slate-600">•</span>
             <span className="font-sans">{getTranslation('offline_secure', currentLang)}</span>
           </div>

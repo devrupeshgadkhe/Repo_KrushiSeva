@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
   downloadAndInstallDirect: (downloadUrl, version) => ipcRenderer.invoke('download-and-install-direct', { downloadUrl, version }),
   quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
+  sendCloudBackup: (payload) => ipcRenderer.invoke('send-cloud-backup', payload),
 
   // Event Listeners from Main Process
   onUpdateChecking: (callback) => {

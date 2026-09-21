@@ -26,7 +26,7 @@ type UpdateListener = (state: UpdateState) => void;
 class UpdateService {
   private state: UpdateState = {
     isElectron: false,
-    currentVersion: '1.0.9',
+    currentVersion: '1.0.13',
     latestVersion: null,
     hasUpdate: false,
     checking: false,
@@ -40,6 +40,7 @@ class UpdateService {
 
   private listeners: Set<UpdateListener> = new Set();
   private initialized = false;
+  private checkIntervalTimer: any = null;
 
   constructor() {
     // Detect environment on construction if window exists
@@ -72,8 +73,9 @@ class UpdateService {
   }
 
   public isNewerVersion(current: string, latest: string): boolean {
-    const cleanCurrent = current.replace(/^v/, '').trim();
-    const cleanLatest = latest.replace(/^v/, '').trim();
+    const cleanCurrent = (current || '').replace(/^v/, '').trim();
+    const cleanLatest = (latest || '').replace(/^v/, '').trim();
+    if (!cleanCurrent || !cleanLatest) return false;
     if (cleanCurrent === cleanLatest) return false;
 
     const cParts = cleanCurrent.split('.').map((p) => parseInt(p, 10) || 0);
@@ -100,19 +102,36 @@ class UpdateService {
         const ver = await window.electronAPI.getAppVersion();
         if (ver) {
           this.state.currentVersion = ver;
+          this.notify();
         }
       } catch (e) {
         console.warn('Could not read version from electronAPI:', e);
       }
 
       // Attach electron-updater event listeners
+      window.electronAPI.onUpdateChecking?.(() => {
+        this.state.checking = true;
+        this.notify();
+      });
+
       window.electronAPI.onUpdateAvailable((info: ElectronUpdateInfo) => {
         this.state.hasUpdate = true;
-        this.state.latestVersion = info.version;
+        this.state.checking = false;
+        if (info?.version) {
+          this.state.latestVersion = info.version;
+        }
         this.state.releaseNotes = Array.isArray(info.releaseNotes)
           ? info.releaseNotes.join('\n')
           : info.releaseNotes || null;
         this.state.downloading = true; // Auto download started
+        this.notify();
+      });
+
+      window.electronAPI.onUpdateNotAvailable?.((info) => {
+        this.state.checking = false;
+        if (info?.version) {
+          this.state.currentVersion = info.version;
+        }
         this.notify();
       });
 
@@ -133,6 +152,7 @@ class UpdateService {
 
       window.electronAPI.onUpdateError((err) => {
         console.warn('Auto updater error notice:', err.message);
+        this.state.checking = false;
         // Only mark error if we were in the middle of downloading
         if (this.state.downloading) {
           this.state.error = err.message;
@@ -142,78 +162,150 @@ class UpdateService {
       });
     }
 
-    // Only Windows Desktop (Electron) performs background auto-checking and automatic downloading
-    if (this.state.isElectron) {
-      // Check immediately shortly after boot
-      setTimeout(() => {
-        this.checkForUpdates(true);
-      }, 3000);
+    // Auto-checking triggers:
+    // 1. Check shortly after launch (2 seconds)
+    setTimeout(() => {
+      this.checkForUpdates(true);
+    }, 2000);
 
-      // And periodic check every 30 minutes
-      setInterval(() => {
+    // 2. Check every 60 seconds whenever internet is active
+    if (this.checkIntervalTimer) clearInterval(this.checkIntervalTimer);
+    this.checkIntervalTimer = setInterval(() => {
+      if (typeof navigator === 'undefined' || navigator.onLine) {
         this.checkForUpdates(true);
-      }, 30 * 60 * 1000);
+      }
+    }, 60 * 1000);
+
+    // 3. Check whenever browser/electron detects network connection re-established
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        console.log('[UpdateService] Internet connection restored, checking for updates...');
+        this.checkForUpdates(true);
+      });
+
+      // 4. Check whenever window regains focus
+      window.addEventListener('focus', () => {
+        this.checkForUpdates(true);
+      });
     }
   }
 
   /**
-   * Check for updates from GitHub Releases
+   * Check for updates from GitHub Releases & CDN
    * If autoDownload is true and running in Windows Desktop (Electron), it triggers download automatically!
    */
   public async checkForUpdates(autoDownload = true): Promise<UpdateState> {
+    if (this.state.downloading || this.state.updateReady) {
+      return this.getState();
+    }
+
     this.state.checking = true;
     this.state.error = null;
     this.notify();
 
+    let foundVersion: string | null = null;
+    let foundDownloadUrl: string | null = null;
+    let foundNotes: string | null = null;
+
     try {
-      // 1. Fetch latest release from GitHub API
-      const res = await fetch('https://api.github.com/repos/devrupeshgadkhe/Repo_KrushiSeva/releases/latest', {
-        headers: { Accept: 'application/vnd.github.v3+json' },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const tag = (data.tag_name || '').trim();
-        const latestVer = tag.replace(/^v/, '');
-
-        // Find .exe asset for Windows
-        let exeDownloadUrl = '';
-        if (Array.isArray(data.assets)) {
-          const exeAsset = data.assets.find((a: any) =>
-            typeof a.name === 'string' && a.name.toLowerCase().endsWith('.exe')
-          );
-          if (exeAsset) {
-            exeDownloadUrl = exeAsset.browser_download_url;
+      // Endpoint 1: Direct latest.yml from GitHub Releases CDN (FAST, UNLIMITED, NO API RATE LIMIT)
+      try {
+        const ymlRes = await fetch(
+          `https://github.com/devrupeshgadkhe/Repo_KrushiSeva/releases/latest/download/latest.yml?t=${Date.now()}`,
+          { cache: 'no-store' }
+        );
+        if (ymlRes.ok) {
+          const ymlText = await ymlRes.text();
+          const verMatch = ymlText.match(/version:\s*([^\s\r\n]+)/);
+          if (verMatch && verMatch[1]) {
+            foundVersion = verMatch[1].trim();
+            const pathMatch = ymlText.match(/path:\s*([^\s\r\n]+)/) || ymlText.match(/url:\s*([^\s\r\n]+)/);
+            const exeFileName = pathMatch ? pathMatch[1].trim() : `Krushi-Seva-ERP-Setup-${foundVersion}.exe`;
+            foundDownloadUrl = `https://github.com/devrupeshgadkhe/Repo_KrushiSeva/releases/download/v${foundVersion}/${exeFileName}`;
+            foundNotes = `Release v${foundVersion}`;
           }
         }
+      } catch (e) {
+        // Fallback to next endpoints
+      }
 
-        this.state.latestVersion = latestVer;
-        this.state.downloadUrl = exeDownloadUrl;
-        this.state.releaseNotes = data.body || '';
+      // Endpoint 2: Raw repository package.json (UNLIMITED)
+      if (!foundVersion) {
+        try {
+          const rawPkgRes = await fetch(
+            `https://raw.githubusercontent.com/devrupeshgadkhe/Repo_KrushiSeva/main/package.json?t=${Date.now()}`,
+            { cache: 'no-store' }
+          );
+          if (rawPkgRes.ok) {
+            const pkgData = await rawPkgRes.json();
+            if (pkgData.version) {
+              foundVersion = pkgData.version.trim();
+              foundDownloadUrl = `https://github.com/devrupeshgadkhe/Repo_KrushiSeva/releases/download/v${foundVersion}/Krushi-Seva-ERP-Setup-${foundVersion}.exe`;
+            }
+          }
+        } catch (e) {
+          // Fallback to GitHub API
+        }
+      }
 
-        const hasNew = this.isNewerVersion(this.state.currentVersion, latestVer);
+      // Endpoint 3: GitHub API
+      if (!foundVersion) {
+        try {
+          const res = await fetch(
+            `https://api.github.com/repos/devrupeshgadkhe/Repo_KrushiSeva/releases/latest?t=${Date.now()}`,
+            {
+              headers: { Accept: 'application/vnd.github.v3+json' },
+              cache: 'no-store',
+            }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const tag = (data.tag_name || '').trim();
+            foundVersion = tag.replace(/^v/, '');
+            foundNotes = data.body || '';
+
+            if (Array.isArray(data.assets)) {
+              const exeAsset = data.assets.find(
+                (a: any) => typeof a.name === 'string' && a.name.toLowerCase().endsWith('.exe')
+              );
+              if (exeAsset) {
+                foundDownloadUrl = exeAsset.browser_download_url;
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+
+      // Also trigger Electron main process autoUpdater
+      if (this.state.isElectron && window.electronAPI?.checkForUpdates) {
+        window.electronAPI.checkForUpdates().catch(() => {});
+      }
+
+      if (foundVersion) {
+        this.state.latestVersion = foundVersion;
+        if (foundDownloadUrl) this.state.downloadUrl = foundDownloadUrl;
+        if (foundNotes) this.state.releaseNotes = foundNotes;
+
+        const hasNew = this.isNewerVersion(this.state.currentVersion, foundVersion);
         this.state.hasUpdate = hasNew;
 
-        // 2. If running on Windows Desktop (Electron) and update is available:
-        // Automatically start downloading without requiring any button click!
-        if (hasNew && this.state.isElectron && autoDownload && !this.state.updateReady && !this.state.downloading) {
-          this.startAutomaticDownload(exeDownloadUrl, latestVer);
-        }
-      } else {
-        // If GitHub API rate-limited, fallback to electronAPI.checkForUpdates()
-        if (this.state.isElectron && window.electronAPI) {
-          await window.electronAPI.checkForUpdates();
+        // Automatically start downloading if new version is available on Windows Desktop
+        if (
+          hasNew &&
+          this.state.isElectron &&
+          autoDownload &&
+          !this.state.updateReady &&
+          !this.state.downloading
+        ) {
+          console.log(`[UpdateService] Newer version v${foundVersion} detected. Starting automatic download...`);
+          const downloadTarget = foundDownloadUrl || `https://github.com/devrupeshgadkhe/Repo_KrushiSeva/releases/download/v${foundVersion}/Krushi-Seva-ERP-Setup-${foundVersion}.exe`;
+          this.startAutomaticDownload(downloadTarget, foundVersion);
         }
       }
     } catch (err: any) {
-      console.warn('Update check failed:', err);
-      if (this.state.isElectron && window.electronAPI) {
-        try {
-          await window.electronAPI.checkForUpdates();
-        } catch (e) {
-          // ignore
-        }
-      }
+      console.warn('Update check warning:', err);
     } finally {
       this.state.checking = false;
       this.notify();
@@ -233,7 +325,8 @@ class UpdateService {
     this.notify();
 
     try {
-      // If direct asset url is available, use robust direct downloader
+      console.log(`[UpdateService] Initiating direct background download for v${version}: ${downloadUrl}`);
+      // If direct asset url is available, use direct downloader
       if (downloadUrl && window.electronAPI.downloadAndInstallDirect) {
         await window.electronAPI.downloadAndInstallDirect(downloadUrl, version);
       } else {

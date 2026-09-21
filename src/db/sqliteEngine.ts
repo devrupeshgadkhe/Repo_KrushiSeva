@@ -12,6 +12,15 @@ function getSqlWasmUrl(): string {
   return '/sql-wasm.wasm';
 }
 
+export interface FullDatabaseBackupJSON {
+  version: string;
+  appName: string;
+  exportedAt: string;
+  timestamp: number;
+  tables: Record<string, any[]>;
+  tableCounts: Record<string, number>;
+}
+
 class SQLiteDatabaseManager {
   private db: Database | null = null;
   private isInitialized = false;
@@ -82,7 +91,17 @@ class SQLiteDatabaseManager {
       'ALTER TABLE sale_items ADD COLUMN mfg TEXT;',
       'ALTER TABLE sale_items ADD COLUMN company TEXT;',
       'ALTER TABLE sale_items ADD COLUMN content TEXT;',
+      'ALTER TABLE sale_items ADD COLUMN technical_name TEXT;',
+      'ALTER TABLE purchase_items ADD COLUMN technical_name TEXT;',
       'ALTER TABLE products ADD COLUMN technical_name TEXT;',
+      'ALTER TABLE products ADD COLUMN fertilizer_grade TEXT;',
+      'ALTER TABLE products ADD COLUMN npk_ratio TEXT;',
+      'ALTER TABLE products ADD COLUMN seed_variety TEXT;',
+      'ALTER TABLE products ADD COLUMN seed_germination TEXT;',
+      'ALTER TABLE products ADD COLUMN toxicity_class TEXT;',
+      'ALTER TABLE products ADD COLUMN cib_registration_no TEXT;',
+      'ALTER TABLE products ADD COLUMN dealer_rate REAL DEFAULT 0;',
+      'ALTER TABLE products ADD COLUMN active INTEGER NOT NULL DEFAULT 1;',
     ];
 
     for (const sql of migrationStatements) {
@@ -221,6 +240,99 @@ class SQLiteDatabaseManager {
     return true;
   }
 
+  public async exportDatabaseJSON(): Promise<FullDatabaseBackupJSON> {
+    await this.getDb();
+    if (!this.db) throw new Error('Database not initialized');
+
+    const tablesRes = this.query<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'schema_migrations' ORDER BY name ASC;"
+    );
+
+    const tables: Record<string, any[]> = {};
+    const tableCounts: Record<string, number> = {};
+
+    for (const t of tablesRes) {
+      try {
+        const rows = this.query(`SELECT * FROM ${t.name};`);
+        tables[t.name] = rows;
+        tableCounts[t.name] = rows.length;
+      } catch (tableErr) {
+        console.warn(`Could not export table ${t.name}:`, tableErr);
+        tables[t.name] = [];
+        tableCounts[t.name] = 0;
+      }
+    }
+
+    return {
+      version: '1.0',
+      appName: 'Krushi Seva ERP',
+      exportedAt: new Date().toISOString(),
+      timestamp: Date.now(),
+      tables,
+      tableCounts
+    };
+  }
+
+  public async restoreDatabaseFromJSON(backup: FullDatabaseBackupJSON): Promise<boolean> {
+    await this.getDb();
+    if (!this.db) throw new Error('Database not initialized');
+    if (!backup || !backup.tables || typeof backup.tables !== 'object') {
+      throw new Error('Invalid JSON backup file format');
+    }
+
+    // Safety backup of current database first
+    try {
+      const emergencyBackup = this.db.export();
+      sessionStorage.setItem('krushi_emergency_pre_restore_backup', JSON.stringify(Array.from(emergencyBackup)));
+    } catch (e) {
+      console.warn('Could not store emergency session backup', e);
+    }
+
+    // Temporarily turn off foreign keys to allow restoring in any table order
+    this.db.run('PRAGMA foreign_keys = OFF;');
+
+    try {
+      this.transaction(() => {
+        for (const [tableName, rows] of Object.entries(backup.tables)) {
+          if (!Array.isArray(rows)) continue;
+
+          // Check if table exists in active schema
+          const tableCheck = this.query<{ name: string }>(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = ?;",
+            [tableName]
+          );
+          if (tableCheck.length === 0) continue;
+
+          // Clear table
+          this.db!.run(`DELETE FROM ${tableName};`);
+
+          if (rows.length === 0) continue;
+
+          // Insert rows
+          for (const row of rows) {
+            if (!row || typeof row !== 'object') continue;
+            const keys = Object.keys(row);
+            if (keys.length === 0) continue;
+            const placeholders = keys.map(() => '?').join(', ');
+            const columnNames = keys.map(k => `"${k}"`).join(', ');
+            const values = keys.map(k => row[k]);
+
+            this.db!.run(
+              `INSERT OR REPLACE INTO ${tableName} (${columnNames}) VALUES (${placeholders});`,
+              values
+            );
+          }
+        }
+      });
+      this.db.run('PRAGMA foreign_keys = ON;');
+      await this.saveToIndexedDB();
+      return true;
+    } catch (err) {
+      this.db.run('PRAGMA foreign_keys = ON;');
+      throw err;
+    }
+  }
+
   public async resetToSeedData(): Promise<void> {
     const SQL = await initSqlJs({ locateFile: () => getSqlWasmUrl() });
     if (this.db) {
@@ -301,9 +413,36 @@ export async function exportDatabaseFile(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+export async function exportDatabaseJSON(): Promise<FullDatabaseBackupJSON> {
+  return sqliteEngine.exportDatabaseJSON();
+}
+
+export async function downloadDatabaseJSONFile(): Promise<void> {
+  const jsonBackup = await sqliteEngine.exportDatabaseJSON();
+  const jsonStr = JSON.stringify(jsonBackup, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `krushi_seva_erp_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export async function restoreDatabaseFromFile(file: File): Promise<boolean> {
+  if (file.name.endsWith('.json')) {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    return sqliteEngine.restoreDatabaseFromJSON(parsed);
+  }
   const arrayBuffer = await file.arrayBuffer();
   return sqliteEngine.restoreDatabaseFromFile(new Uint8Array(arrayBuffer));
+}
+
+export async function restoreDatabaseFromJSON(backup: FullDatabaseBackupJSON): Promise<boolean> {
+  return sqliteEngine.restoreDatabaseFromJSON(backup);
 }
 
 export async function checkIntegrity(): Promise<boolean> {
