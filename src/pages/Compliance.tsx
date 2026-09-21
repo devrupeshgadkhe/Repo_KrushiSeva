@@ -336,6 +336,32 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
         </div>
       </div>
 
+      {/* Clean Print Header for Statutory Register PDF / Print */}
+      <div className="hidden print:block mb-3 border-b-2 border-slate-900 pb-2">
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-base font-black text-slate-900">
+              {isMr && bizSettings?.shop_name_mr ? bizSettings.shop_name_mr : (bizSettings?.shop_name || 'कृषी सेवा केंद्र')}
+            </h1>
+            <p className="text-[11px] text-slate-700">{bizSettings?.address}, {bizSettings?.village_city}, {bizSettings?.district}</p>
+            <p className="text-[10px] text-slate-600">
+              COT: {bizSettings?.cot_licence || '-'} | Pest: {bizSettings?.pesticide_licence || '-'} | Seed: {bizSettings?.seed_licence || '-'} | Fert: {bizSettings?.fert_licence_r || bizSettings?.fertilizer_licence || '-'}
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs font-black uppercase text-emerald-950">
+              {activeTab === 'fertilizer' && (isMr ? 'खते साठा व विक्री नोंदवही (Form O/L)' : 'Fertilizer Stock & Sales Register')}
+              {activeTab === 'seeds' && (isMr ? 'बियाणे आवक-जावक व विक्री नोंदवही' : 'Seeds Inward & Sales Register')}
+              {activeTab === 'pesticides' && (isMr ? 'कीटकनाशके साठा व विक्री नोंदवही' : 'Insecticides / Pesticides Register')}
+              {activeTab === 'licences' && (isMr ? 'शासकीय कृषी परवाने स्थिती' : 'Statutory Licences Summary')}
+            </div>
+            <div className="text-[10px] text-slate-600">
+              {isMr ? 'महिना / तारीख:' : 'Month / Date:'} {selectedMonth}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {loading && (
         <div className="p-8 text-center text-slate-500 flex items-center justify-center gap-2">
           <RefreshCw className="w-5 h-5 animate-spin" />

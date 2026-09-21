@@ -13,7 +13,7 @@ import {
   TrendingUp,
   RefreshCw
 } from 'lucide-react';
-import { AppLanguage } from '../types';
+import { AppLanguage, BusinessSettings } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
@@ -39,6 +39,11 @@ export const Reports: React.FC<ReportsProps> = ({ currentLang }) => {
   const [toDate, setToDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any[]>([]);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
+
+  useEffect(() => {
+    dbService.getBusinessSettings().then(setBusinessSettings).catch(console.error);
+  }, []);
 
   const loadReport = async () => {
     setLoading(true);
@@ -93,7 +98,7 @@ export const Reports: React.FC<ReportsProps> = ({ currentLang }) => {
   return (
     <div className="flex-1 p-6 overflow-y-auto space-y-4">
       {/* Header */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4 no-print">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-800">
@@ -182,8 +187,34 @@ export const Reports: React.FC<ReportsProps> = ({ currentLang }) => {
         )}
       </div>
 
+      {/* Clean Print Header for Physical Print / PDF */}
+      <div className="hidden print:block mb-3 border-b-2 border-slate-900 pb-2">
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-base font-black text-slate-900">
+              {isMr && businessSettings?.shop_name_mr ? businessSettings.shop_name_mr : (businessSettings?.shop_name || 'कृषी सेवा केंद्र')}
+            </h1>
+            <p className="text-[11px] text-slate-700">{businessSettings?.address}, {businessSettings?.village_city}, {businessSettings?.district}</p>
+            <p className="text-[10px] text-slate-600">GSTIN: {businessSettings?.gstin || '-'} | Phone: {businessSettings?.mobile}</p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs font-black uppercase text-emerald-950">
+              {reportButtons.find(r => r.id === reportType)?.[isMr ? 'mr' : 'en']}
+            </div>
+            <div className="text-[10px] text-slate-600">
+              {isMr ? 'तारीख:' : 'Date:'} {new Date().toLocaleDateString('en-IN')}
+            </div>
+            {(fromDate || toDate) && (
+              <div className="text-[10px] text-slate-600 font-mono">
+                {fromDate || 'Start'} to {toDate || 'Today'}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Render Table based on Report Type */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
         <div className="overflow-x-auto">
           {reportType === 'sales' && (
             <table className="w-full text-xs text-left">

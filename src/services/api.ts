@@ -580,7 +580,11 @@ export const dbService = {
       SELECT si.*, 
              COALESCE(si.mfg, si.company, p.company, p.brand, '') as mfg,
              COALESCE(si.company, p.company, p.brand, '') as company,
-             COALESCE(si.content, p.technical_name, p.fertilizer_grade, p.subcategory, '') as content
+             COALESCE(si.company, p.company, p.brand, '') as manufacturer_name,
+             COALESCE(si.company, p.company, p.brand, '') as company_name,
+             COALESCE(si.technical_name, si.content, p.technical_name, p.fertilizer_grade, p.subcategory, '') as content,
+             COALESCE(si.technical_name, si.content, p.technical_name, p.fertilizer_grade, p.subcategory, '') as chemical_content,
+             COALESCE(si.technical_name, p.technical_name, '') as technical_name
       FROM sale_items si
       LEFT JOIN products p ON si.product_id = p.id
       WHERE si.sale_id = ?

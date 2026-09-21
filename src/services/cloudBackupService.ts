@@ -10,12 +10,13 @@ export interface CloudBackupState {
 }
 
 // Google Apps Script Web App endpoint and target account configured privately (never exposed on UI)
-const CLOUD_BACKUP_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyAYKVB5xsVTtyKjQv1R-9sSRKsCJo8VZFHZPgqCaKOHZYpbRQJI_PgFvGACKZ32r8/exec';
+const DEFAULT_CLOUD_BACKUP_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyAYKVB5xsVTtyKjQv1R-9sSRKsCJo8VZFHZPgqCaKOHZYpbRQJI_PgFvGACKZ32r8/exec';
 const BACKUP_ACCOUNT_EMAIL = 'pradipayanbackup@gmail.com';
 
 const STORAGE_LAST_BACKUP_TIME = 'krushi_last_auto_backup_timestamp';
 const STORAGE_LAST_BACKUP_STATUS = 'krushi_last_auto_backup_status';
 const STORAGE_LAST_RECORD_COUNT = 'krushi_last_auto_backup_record_count';
+const STORAGE_GAS_URL = 'krushi_gas_backup_url';
 
 class CloudBackupService {
   private state: CloudBackupState = {
@@ -35,6 +36,34 @@ class CloudBackupService {
 
   constructor() {
     this.restoreSavedState();
+  }
+
+  public getGASUrl(): string {
+    try {
+      const customUrl = localStorage.getItem(STORAGE_GAS_URL);
+      if (customUrl && customUrl.trim().startsWith('http')) {
+        return customUrl.trim();
+      }
+    } catch {
+      // Ignore
+    }
+    return DEFAULT_CLOUD_BACKUP_ENDPOINT;
+  }
+
+  public setGASUrl(url: string): void {
+    try {
+      if (!url || !url.trim()) {
+        localStorage.removeItem(STORAGE_GAS_URL);
+      } else {
+        localStorage.setItem(STORAGE_GAS_URL, url.trim());
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  public getTargetEmail(): string {
+    return BACKUP_ACCOUNT_EMAIL;
   }
 
   private restoreSavedState() {
@@ -147,11 +176,13 @@ class CloudBackupService {
       }
 
       // 3. Prepare payload for cloud delivery
+      const targetGasUrl = this.getGASUrl();
       const payload = {
         action: 'save_database_backup',
         filename,
         appName: 'Krushi Seva ERP',
         targetEmail: BACKUP_ACCOUNT_EMAIL,
+        gasUrl: targetGasUrl,
         exportedAt: timestampIso,
         timestamp: Date.now(),
         totalRecords,
@@ -162,16 +193,18 @@ class CloudBackupService {
 
       let localSaved = true;
       let cloudSaved = false;
+      let message = '';
 
       // 4. Send via Electron Desktop IPC if available (with filesystem save and direct https)
       if (window.electronAPI && typeof window.electronAPI.sendCloudBackup === 'function') {
         const res = await window.electronAPI.sendCloudBackup(payload);
         localSaved = res.localSaved ?? true;
         cloudSaved = res.cloudSaved ?? false;
+        message = res.message || '';
       } else {
         // Web Environment Fallback: Send to Google Apps Script Web App
         try {
-          await fetch(CLOUD_BACKUP_ENDPOINT, {
+          await fetch(targetGasUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'text/plain;charset=utf-8',
@@ -180,27 +213,29 @@ class CloudBackupService {
             mode: 'no-cors',
           });
           cloudSaved = true;
+          message = 'Cloud backup request dispatched';
         } catch (fetchErr: any) {
           console.warn('Web cloud backup transmission issue:', fetchErr);
+          message = fetchErr?.message || 'Cloud backup transmission failed';
         }
       }
 
-      this.state.status = 'success';
+      this.state.status = (localSaved || cloudSaved) ? 'success' : 'failed';
       this.state.localSaved = localSaved;
       this.state.cloudSaved = cloudSaved;
       this.state.lastBackupTime = timestampIso;
       this.state.totalRecordsBackedUp = totalRecords;
-      this.state.lastError = null;
+      this.state.lastError = cloudSaved ? null : (message || 'Cloud sync error');
 
       try {
         localStorage.setItem(STORAGE_LAST_BACKUP_TIME, timestampIso);
-        localStorage.setItem(STORAGE_LAST_BACKUP_STATUS, 'success');
+        localStorage.setItem(STORAGE_LAST_BACKUP_STATUS, this.state.status);
       } catch {
         // ignore storage error
       }
 
       this.notify();
-      return true;
+      return localSaved || cloudSaved;
     } catch (err: any) {
       console.error('Automated backup execution error:', err);
       this.state.status = 'failed';
@@ -208,6 +243,16 @@ class CloudBackupService {
       this.notify();
       return false;
     }
+  }
+
+  public async syncNow(): Promise<{ success: boolean; localSaved: boolean; cloudSaved: boolean; message: string }> {
+    await this.executeBackup();
+    return {
+      success: this.state.status === 'success',
+      localSaved: this.state.localSaved,
+      cloudSaved: this.state.cloudSaved,
+      message: this.state.lastError || (this.state.cloudSaved ? 'Google Drive व स्थानिक बॅकअप यशस्वी' : 'स्थानिक बॅकअप यशस्वी, गुगल ड्राईव्ह प्रलंबित'),
+    };
   }
 
   public async downloadJSONBackup(): Promise<void> {

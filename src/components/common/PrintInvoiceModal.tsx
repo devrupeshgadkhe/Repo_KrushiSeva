@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Printer, X, Download, Share2, Check, FileText } from 'lucide-react';
 import { Sale, BusinessSettings, InvoiceSettings, AppLanguage } from '../../types';
 import { formatINR, formatDate, numberToWords } from '../../utils/formatters';
@@ -23,6 +23,19 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   );
   const [copyType, setCopyType] = useState<'ORIGINAL' | 'DUPLICATE' | 'TRIPLICATE'>('ORIGINAL');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.add('invoice-modal-open');
+    if (printFormat === 'Thermal') {
+      document.body.classList.add('thermal-print-mode');
+    } else {
+      document.body.classList.remove('thermal-print-mode');
+    }
+    return () => {
+      document.body.classList.remove('invoice-modal-open');
+      document.body.classList.remove('thermal-print-mode');
+    };
+  }, [printFormat]);
 
   if (!sale) return null;
 
@@ -180,7 +193,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100 flex justify-center">
           {printFormat === 'A4' ? (
             /* =================== A4 STATUTORY INVOICE (DOCUMENT 1 COMPLIANT) =================== */
-            <div className="bg-white text-slate-900 w-full max-w-[840px] p-6 shadow-sm border border-slate-400 rounded-sm font-sans text-xs min-h-[950px] flex flex-col justify-between print:p-0 print:border-none print:shadow-none">
+            <div 
+              id="invoice-print-container"
+              className="bg-white text-slate-900 w-full max-w-[840px] p-6 shadow-sm border border-slate-400 rounded-sm font-sans text-xs min-h-[950px] flex flex-col justify-between print:p-0 print:border-none print:shadow-none"
+            >
               <div>
                 {/* 1. Top Jurisdiction Bar */}
                 <div className="flex justify-between items-center text-[10px] text-slate-700 border-b border-slate-300 pb-1 mb-1 font-medium">
@@ -281,7 +297,9 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     </div>
                     <div className="flex">
                       <span className="w-24 text-slate-500 font-bold">{isMr ? 'तालुका / जिल्हा:' : 'Taluka / Dist:'}</span>
-                      <span className="text-slate-800">{sale.customer_taluka || businessSettings.taluka || '-'}, {businessSettings.district}</span>
+                      <span className="text-slate-800">
+                        {[sale.customer_taluka || businessSettings.taluka, businessSettings.district].filter(Boolean).join(', ') || '-'}
+                      </span>
                     </div>
                     <div className="flex">
                       <span className="w-24 text-slate-500 font-bold">{isMr ? 'मोबाईल नंबर:' : 'Mobile No:'}</span>
@@ -305,7 +323,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     </div>
                     <div className="flex justify-between text-[10px]">
                       <span className="text-slate-500">{isMr ? 'आधार / गाडी क्र:' : 'Aadhaar / Vehicle:'}</span>
-                      <span className="font-mono text-slate-700">{sale.aadhaar_no || sale.vehicle_no || '-'}</span>
+                      <span className="font-mono text-slate-700">{sale.customer_aadhar || sale.aadhaar_no || sale.vehicle_no || '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -335,14 +353,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                           <div>
                             {item.product_name} {item.pack_size ? `(${item.pack_size})` : ''}
                           </div>
-                          {item.chemical_content && (
+                          {(item.chemical_content || item.content || item.technical_name) && (
                             <div className="text-[9px] text-slate-500 font-normal">
-                              {item.chemical_content}
+                              {item.chemical_content || item.content || item.technical_name}
                             </div>
                           )}
                         </td>
                         <td className="border border-slate-400 px-1.5 py-1 text-slate-700 truncate font-medium">
-                          {item.manufacturer_name || item.company_name || '-'}
+                          {item.manufacturer_name || item.company_name || item.company || item.mfg || '-'}
                         </td>
                         <td className="border border-slate-400 px-1 py-1 text-center font-mono text-[9.5px] text-slate-600">
                           {item.hsn_code || '-'}
@@ -510,7 +528,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
             </div>
           ) : (
             /* =================== THERMAL 80mm RECEIPT =================== */
-            <div className="bg-white text-black w-80 p-4 shadow-sm border border-slate-300 rounded-sm font-mono text-[11px] leading-tight">
+            <div 
+              id="invoice-print-container"
+              className="bg-white text-black w-80 p-4 shadow-sm border border-slate-300 rounded-sm font-mono text-[11px] leading-tight"
+            >
               <div className="text-center border-b border-dashed border-black pb-2 mb-2 flex flex-col items-center">
                 <img 
                   src={businessSettings.logo_url || '/icon.png'} 

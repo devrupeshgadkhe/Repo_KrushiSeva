@@ -14,7 +14,7 @@ import {
   ArrowDownRight,
   ArrowUpRight
 } from 'lucide-react';
-import { AppLanguage, Customer, LedgerEntry, PaymentMode } from '../types';
+import { AppLanguage, Customer, LedgerEntry, PaymentMode, BusinessSettings } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
@@ -27,8 +27,14 @@ interface FarmersProps {
 }
 
 export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, preselectedId }) => {
+  const isMr = currentLang === 'mr';
   const { showToast } = useFeedback();
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+
+  useEffect(() => {
+    dbService.getBusinessSettings().then(setBusinessSettings).catch(console.error);
+  }, []);
   const [search, setSearch] = useState('');
   const [villageFilter, setVillageFilter] = useState('All');
   const [onlyBalance, setOnlyBalance] = useState(false);
@@ -216,7 +222,7 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
   return (
     <div className="flex-1 p-6 overflow-y-auto space-y-4">
       {/* Top Header */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4 no-print">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-800">
@@ -281,7 +287,7 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
       {/* Main Grid: Farmer List on Left, Selected Ledger on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left Column: Customer List */}
-        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden no-print">
           <div className="p-3 bg-slate-50 border-b border-slate-200 font-bold text-xs text-slate-700 flex justify-between">
             <span>{getTranslation('farmer_list_header', currentLang)}</span>
             <span className="font-mono text-slate-500">({filteredCustomers.length})</span>
@@ -341,11 +347,32 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
         </div>
 
         {/* Right Column: Customer Khata Ledger View */}
-        <div className="lg:col-span-6">
+        <div className="lg:col-span-6 print:col-span-12 print:w-full">
           {selectedFarmer ? (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden space-y-4 p-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden space-y-4 p-4 print:border-none print:shadow-none print:p-0">
+              {/* Clean Print Header for Physical Print / PDF */}
+              <div className="hidden print:block mb-3 border-b-2 border-slate-900 pb-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h1 className="text-base font-black text-slate-900">
+                      {isMr && businessSettings?.shop_name_mr ? businessSettings.shop_name_mr : (businessSettings?.shop_name || 'कृषी सेवा केंद्र')}
+                    </h1>
+                    <p className="text-[11px] text-slate-700">{businessSettings?.address}, {businessSettings?.village_city}, {businessSettings?.district}</p>
+                    <p className="text-[10px] text-slate-600">GSTIN: {businessSettings?.gstin || '-'} | Phone: {businessSettings?.mobile || '-'}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-black uppercase text-emerald-950">
+                      {isMr ? 'शेतकरी खातेवही / उधारी लेजर' : 'FARMER KHATA LEDGER STATEMENT'}
+                    </div>
+                    <div className="text-[10px] text-slate-600">
+                      {isMr ? 'तारीख:' : 'Date:'} {new Date().toLocaleDateString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Profile Card */}
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 print:bg-white print:border-slate-400">
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-sm text-slate-900">
@@ -353,7 +380,7 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
                     </h3>
                     <button
                       onClick={() => handleOpenEdit(selectedFarmer)}
-                      className="p-1 text-slate-400 hover:text-emerald-700 rounded cursor-pointer"
+                      className="p-1 text-slate-400 hover:text-emerald-700 rounded cursor-pointer no-print"
                       title={getTranslation('edit', currentLang)}
                     >
                       <Edit className="w-3.5 h-3.5" />
@@ -387,7 +414,7 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
                       setPaymentAmount(selectedFarmer.current_balance > 0 ? selectedFarmer.current_balance : 0);
                       setShowPaymentModal(true);
                     }}
-                    className="w-full sm:w-auto px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                    className="w-full sm:w-auto px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer no-print"
                   >
                     <Wallet className="w-3.5 h-3.5" />
                     <span>{getTranslation('collect_payment_btn', currentLang)}</span>
@@ -396,12 +423,12 @@ export const Farmers: React.FC<FarmersProps> = ({ currentLang, onRefreshData, pr
               </div>
 
               {/* Ledger Statement */}
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <div className="bg-slate-100 p-2.5 px-3 flex items-center justify-between text-xs font-bold text-slate-700">
+              <div className="border border-slate-200 rounded-xl overflow-hidden print:border-slate-400">
+                <div className="bg-slate-100 p-2.5 px-3 flex items-center justify-between text-xs font-bold text-slate-700 print:bg-slate-200">
                   <span>{getTranslation('khata_ledger_statement', currentLang)}</span>
                   <button 
                     onClick={() => window.print()}
-                    className="text-slate-600 hover:text-slate-900 flex items-center gap-1 text-[11px] cursor-pointer"
+                    className="text-slate-600 hover:text-slate-900 flex items-center gap-1 text-[11px] cursor-pointer no-print"
                   >
                     <Printer className="w-3.5 h-3.5" />
                     <span>{getTranslation('print', currentLang)}</span>

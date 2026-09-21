@@ -11,7 +11,7 @@ import {
   ArrowUpRight,
   Printer
 } from 'lucide-react';
-import { AppLanguage, Supplier, LedgerEntry, PaymentMode } from '../types';
+import { AppLanguage, Supplier, LedgerEntry, PaymentMode, BusinessSettings } from '../types';
 import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
@@ -24,8 +24,14 @@ interface SuppliersProps {
 }
 
 export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData, preselectedId }) => {
+  const isMr = currentLang === 'mr';
   const { showToast } = useFeedback();
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  useEffect(() => {
+    dbService.getBusinessSettings().then(setBusinessSettings).catch(console.error);
+  }, []);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -195,7 +201,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
   return (
     <div className="flex-1 p-6 overflow-y-auto space-y-4">
       {/* Header */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4 no-print">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-800">
@@ -248,7 +254,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left Column: Suppliers List */}
-        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden no-print">
           <div className="p-3 bg-slate-50 border-b border-slate-200 font-bold text-xs text-slate-700 flex justify-between">
             <span>{getTranslation('supplier_list_header', currentLang)}</span>
             <span className="font-mono text-slate-500">({suppliers.length})</span>
@@ -303,21 +309,42 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
         </div>
 
         {/* Right Column: Ledger Statement & Payment */}
-        <div className="lg:col-span-6 flex flex-col gap-4">
+        <div className="lg:col-span-6 print:col-span-12 print:w-full flex flex-col gap-4">
           {selectedSupplier ? (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col">
-              <div className="p-4 bg-slate-800 text-white flex items-center justify-between">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col print:border-none print:shadow-none">
+              {/* Clean Print Header for Physical Print / PDF */}
+              <div className="hidden print:block mb-3 border-b-2 border-slate-900 pb-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h1 className="text-base font-black text-slate-900">
+                      {isMr && businessSettings?.shop_name_mr ? businessSettings.shop_name_mr : (businessSettings?.shop_name || 'कृषी सेवा केंद्र')}
+                    </h1>
+                    <p className="text-[11px] text-slate-700">{businessSettings?.address}, {businessSettings?.village_city}, {businessSettings?.district}</p>
+                    <p className="text-[10px] text-slate-600">GSTIN: {businessSettings?.gstin || '-'} | Phone: {businessSettings?.mobile || '-'}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-black uppercase text-emerald-950">
+                      {isMr ? 'कंपनी / पुरवठादार खातेवही लेजर' : 'SUPPLIER / COMPANY LEDGER STATEMENT'}
+                    </div>
+                    <div className="text-[10px] text-slate-600">
+                      {isMr ? 'तारीख:' : 'Date:'} {new Date().toLocaleDateString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-800 text-white flex items-center justify-between print:bg-white print:text-black print:border-b-2 print:border-slate-800">
                 <div>
-                  <h3 className="font-bold text-sm text-white">{selectedSupplier.company}</h3>
-                  <p className="text-[11px] text-amber-300 mt-0.5">
+                  <h3 className="font-bold text-sm text-white print:text-black">{selectedSupplier.company}</h3>
+                  <p className="text-[11px] text-amber-300 mt-0.5 print:text-slate-700">
                     {selectedSupplier.name} • <span className="font-mono">{selectedSupplier.mobile}</span> • GSTIN: {selectedSupplier.gstin || '-'}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <div className="text-right mr-2">
-                    <div className="text-[10px] text-slate-400">{getTranslation('payable_due', currentLang)}:</div>
-                    <div className="font-mono font-bold text-base text-amber-300">
+                    <div className="text-[10px] text-slate-400 print:text-slate-600">{getTranslation('payable_due', currentLang)}:</div>
+                    <div className="font-mono font-bold text-base text-amber-300 print:text-rose-700">
                       {formatINR(selectedSupplier.current_balance)}
                     </div>
                   </div>
@@ -327,7 +354,7 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
                       setPayAmount(selectedSupplier.current_balance > 0 ? selectedSupplier.current_balance : 0);
                       setShowPayModal(true);
                     }}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer no-print"
                   >
                     <Wallet className="w-3.5 h-3.5" />
                     <span>{getTranslation('pay_supplier_btn', currentLang)}</span>
@@ -336,13 +363,13 @@ export const Suppliers: React.FC<SuppliersProps> = ({ currentLang, onRefreshData
               </div>
 
               {/* Ledger Statement */}
-              <div className="p-3">
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="bg-slate-100 p-2.5 px-3 flex items-center justify-between text-xs font-bold text-slate-700">
+              <div className="p-3 print:p-0">
+                <div className="border border-slate-200 rounded-xl overflow-hidden print:border-slate-400">
+                  <div className="bg-slate-100 p-2.5 px-3 flex items-center justify-between text-xs font-bold text-slate-700 print:bg-slate-200">
                     <span>{getTranslation('supplier_ledger_statement', currentLang)}</span>
                     <button 
                       onClick={() => window.print()}
-                      className="text-slate-600 hover:text-slate-900 flex items-center gap-1 text-[11px] cursor-pointer"
+                      className="text-slate-600 hover:text-slate-900 flex items-center gap-1 text-[11px] cursor-pointer no-print"
                     >
                       <Printer className="w-3.5 h-3.5" />
                       <span>{getTranslation('print', currentLang)}</span>
