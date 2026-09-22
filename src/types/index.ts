@@ -414,17 +414,38 @@ export interface Licence {
 export interface PesticideSalesRecord {
   id: number;
   date: string;
+  invoice_date?: string;
   invoice_no: string;
   farmer_name: string;
+  customer_name?: string;
   farmer_mobile: string;
+  customer_mobile?: string;
   farmer_village: string;
+  customer_village?: string;
   product_name: string;
   batch_number: string;
+  expiry_date?: string;
   cib_no?: string;
   quantity: number;
   unit: string;
   crop_treated?: string;
+  crop?: string;
   remarks?: string;
+  pest?: string;
+}
+
+export interface StatutoryPesticideRegisterRow {
+  sr_no: number;
+  product_id: number;
+  product_name: string;
+  technical_name: string;
+  cib_no: string;
+  company: string;
+  opening_stock: number;
+  inward: number;
+  sales: number;
+  closing_stock: number;
+  unit: string;
 }
 
 export type StatutoryLicence = Licence;

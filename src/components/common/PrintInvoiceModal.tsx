@@ -128,7 +128,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* GST / Non-GST Bill Selector */}
+            {/* GST / Retail Bill Selector */}
             <div className="flex bg-slate-800 p-0.5 rounded-lg text-xs border border-slate-700">
               <button
                 type="button"
@@ -145,12 +145,12 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                 type="button"
                 onClick={() => setIsGstBill(false)}
                 className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
-                  !isGstBill ? 'bg-amber-600 text-white' : 'text-slate-300 hover:text-white'
+                  !isGstBill ? 'bg-emerald-700 text-white' : 'text-slate-300 hover:text-white'
                 }`}
-                title={isMr ? 'साधे बिल / Non-GST विक्री पावती' : 'Non-GST / Bill of Supply'}
+                title={isMr ? 'किरकोळ विक्री पावती' : 'Retail Bill'}
               >
                 <Receipt className="w-3.5 h-3.5" />
-                <span>{isMr ? 'Non-GST बिल' : 'Non-GST Bill'}</span>
+                <span>{isMr ? 'किरकोळ बिल' : 'Retail Bill'}</span>
               </button>
             </div>
 
@@ -344,7 +344,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                   <span>
                     {isGstBill 
                       ? (isMr ? 'कर विक्री पावती / TAX INVOICE' : 'TAX INVOICE') 
-                      : (isMr ? 'विक्री पावती / साधे बिल (BILL OF SUPPLY)' : 'BILL OF SUPPLY / CASH MEMO')}
+                      : (isMr ? 'किरकोळ विक्री पावती / RETAIL INVOICE' : 'RETAIL INVOICE')}
                   </span>
                   <span>{sale.payment_mode === 'Credit' ? (isMr ? 'उधारी पावती' : 'CREDIT') : (isMr ? 'रोख पावती' : 'CASH')}</span>
                 </div>
@@ -534,18 +534,15 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                         </table>
                       </div>
                     ) : (
-                      /* Non-GST Retail Supply Info Box */
+                      /* Retail Sales Memo Info Box */
                       <div>
-                        <div className="font-bold text-slate-800 mb-1.5 uppercase text-[9px] border-b border-slate-300 pb-0.5 flex items-center justify-between">
-                          <span>{isMr ? 'साधे बिल तपशील (Bill of Supply Memo)' : 'Bill of Supply Details'}</span>
-                          <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded font-semibold text-[8.5px]">
-                            {isMr ? 'विना-कर बीजक' : 'Non-GST Supply'}
-                          </span>
+                        <div className="font-bold text-slate-800 mb-1 uppercase text-[9px] border-b border-slate-300 pb-0.5">
+                          <span>{isMr ? 'किरकोळ विक्री पावती तपशील' : 'Retail Sales Memo Details'}</span>
                         </div>
                         <p className="text-[10px] text-slate-700 leading-snug">
                           {isMr 
-                            ? 'हे बिल करपात्र नसून किरकोळ विक्री पावती (Bill of Supply) स्वरूपात जारी करण्यात आले आहे.' 
-                            : 'This is a retail cash memo / bill of supply for agricultural inputs issued without tax.'}
+                            ? 'अधिकृत कृषी निविष्ठा किरकोळ विक्री पावती.' 
+                            : 'Official agricultural inputs retail sales memo.'}
                         </p>
                       </div>
                     )}

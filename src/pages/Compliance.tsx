@@ -25,6 +25,7 @@ import {
   PesticideRegisterRecord, 
   StatutoryFertilizerRegisterRow, 
   StatutorySeedRegisterRow, 
+  StatutoryPesticideRegisterRow,
   BusinessSettings 
 } from '../types';
 import { getTranslation } from '../i18n';
@@ -41,6 +42,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
   const isMr = currentLang === 'mr';
 
   const [activeTab, setActiveTab] = useState<'licences' | 'fertilizer' | 'seeds' | 'pesticides'>('licences');
+  const [pesticideSubView, setPesticideSubView] = useState<'stock' | 'sales'>('stock');
   const [loading, setLoading] = useState(false);
 
   // Business settings from database
@@ -56,6 +58,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
   const [fertilizerRows, setFertilizerRows] = useState<StatutoryFertilizerRegisterRow[]>([]);
   const [seedRows, setSeedRows] = useState<StatutorySeedRegisterRow[]>([]);
   const [pesticideRegister, setPesticideRegister] = useState<PesticideRegisterRecord[]>([]);
+  const [pesticideStockRows, setPesticideStockRows] = useState<StatutoryPesticideRegisterRow[]>([]);
 
   // Edit licence modal
   const [editingLicence, setEditingLicence] = useState<StatutoryLicence | null>(null);
@@ -67,18 +70,20 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [biz, lics, ferts, seeds, pestReg] = await Promise.all([
+      const [biz, lics, ferts, seeds, pestReg, pestStock] = await Promise.all([
         dbService.getBusinessSettings(),
         dbService.getLicences(),
         dbService.getMonthlyFertilizerRegister(selectedMonth),
         dbService.getMonthlySeedRegister(selectedMonth),
-        dbService.getPesticideRegister(),
+        dbService.getPesticideRegister('', `${selectedMonth}-01`, `${selectedMonth}-31`),
+        dbService.getMonthlyPesticideStockRegister(selectedMonth),
       ]);
       setBizSettings(biz);
       setLicences(lics);
       setFertilizerRows(ferts);
       setSeedRows(seeds);
       setPesticideRegister(pestReg);
+      setPesticideStockRows(pestStock);
     } catch (e) {
       console.error('Error loading compliance data:', e);
     } finally {
@@ -158,19 +163,37 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
     exportToCSV(`Seed_Crop_Register_${selectedMonth}`, data);
   };
 
+  const handleExportPesticideStockCSV = () => {
+    const data = pesticideStockRows.map((r, i) => ({
+      'Sr No': i + 1,
+      'Pesticide Name': r.product_name,
+      'Technical Name': r.technical_name,
+      'CIB Reg No': r.cib_no,
+      'Company': r.company,
+      'Unit': r.unit,
+      'Opening Stock': r.opening_stock,
+      'Inward': r.inward,
+      'Total Available': Number((r.opening_stock + r.inward).toFixed(2)),
+      'Sales (Outward)': r.sales,
+      'Closing Stock': r.closing_stock,
+      'Month': selectedMonth
+    }));
+    exportToCSV(`Pesticide_Stock_Register_${selectedMonth}`, data);
+  };
+
   const handleExportPesticidesCSV = () => {
     const data = pesticideRegister.map((p, i) => ({
       'Sr No': i + 1,
-      'Date': p.invoice_date,
+      'Date': p.invoice_date || p.date,
       'Invoice No': p.invoice_no,
-      'Farmer Name': p.customer_name,
-      'Village': p.customer_village || '',
-      'Mobile': p.customer_mobile || '',
-      'Crop': p.crop || '',
-      'Pest': p.pest || '',
+      'Farmer Name': p.customer_name || p.farmer_name,
+      'Village': p.customer_village || p.farmer_village || '',
+      'Mobile': p.customer_mobile || p.farmer_mobile || '',
+      'Crop': p.crop || p.crop_treated || '',
+      'Pest / Purpose': p.pest || p.remarks || '',
       'Pesticide Name': p.product_name,
       'Batch No': p.batch_number,
-      'Expiry Date': p.expiry_date,
+      'Expiry Date': p.expiry_date || '',
       'Quantity': `${p.quantity} ${p.unit}`,
     }));
     exportToCSV(`Pesticide_Sales_Register_${selectedMonth}`, data);
@@ -187,6 +210,12 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
   const totalSeedInward = seedRows.reduce((s, r) => s + r.inward, 0);
   const totalSeedSales = seedRows.reduce((s, r) => s + r.sales, 0);
   const totalSeedClosing = seedRows.reduce((s, r) => s + r.closing_stock, 0);
+
+  // Pesticide totals
+  const totalPestOpening = pesticideStockRows.reduce((s, r) => s + r.opening_stock, 0);
+  const totalPestInward = pesticideStockRows.reduce((s, r) => s + r.inward, 0);
+  const totalPestSales = pesticideStockRows.reduce((s, r) => s + r.sales, 0);
+  const totalPestClosing = pesticideStockRows.reduce((s, r) => s + r.closing_stock, 0);
 
   return (
     <div className="flex-1 p-6 overflow-y-auto space-y-4">
@@ -211,7 +240,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
 
           {/* Action buttons (Month Selector, Print, Export) */}
           <div className="flex flex-wrap items-center gap-2">
-            {(activeTab === 'fertilizer' || activeTab === 'seeds') && (
+            {(activeTab === 'fertilizer' || activeTab === 'seeds' || activeTab === 'pesticides') && (
               <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200">
                 <button
                   type="button"
@@ -270,7 +299,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             {activeTab === 'pesticides' && (
               <button
                 type="button"
-                onClick={handleExportPesticidesCSV}
+                onClick={pesticideSubView === 'stock' ? handleExportPesticideStockCSV : handleExportPesticidesCSV}
                 className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 active:scale-95 text-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -379,15 +408,18 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             const isNearExpiry = daysLeft <= 90 && daysLeft > 0;
             const isExpired = daysLeft <= 0;
 
-            let licName = lic.licence_name;
+            const rawType = (lic.licence_type || (lic as any).licence_name || '').toString();
+            let licName = rawType;
             if (isMr) {
-              if (lic.licence_name.includes('Fertilizer')) licName = 'खत विक्री परवाना';
-              else if (lic.licence_name.includes('Seed')) licName = 'बियाणे विक्री परवाना';
-              else if (lic.licence_name.includes('Pesticide') || lic.licence_name.includes('Insecticide')) licName = 'कीटकनाशक विक्री परवाना';
+              if (rawType.toLowerCase().includes('fert') || rawType.includes('खत')) licName = 'रासायनिक खत विक्री परवाना (Fertilizer Licence)';
+              else if (rawType.toLowerCase().includes('seed') || rawType.includes('बियाणे')) licName = 'प्रमाणित बियाणे विक्री परवाना (Seed Licence)';
+              else if (rawType.toLowerCase().includes('pesticide') || rawType.toLowerCase().includes('insect') || rawType.includes('कीटकनाशक')) licName = 'कीटकनाशके व बुरशीनाशके विक्री परवाना (Insecticide Licence)';
+              else licName = `${rawType} परवाना`;
             } else {
-              if (lic.licence_name.includes('खत')) licName = 'Fertilizer Licence';
-              else if (lic.licence_name.includes('बियाणे')) licName = 'Seed Licence';
-              else if (lic.licence_name.includes('कीटकनाशक')) licName = 'Pesticide Licence';
+              if (rawType.toLowerCase().includes('fert') || rawType.includes('खत')) licName = 'Fertilizer Dealer Licence';
+              else if (rawType.toLowerCase().includes('seed') || rawType.includes('बियाणे')) licName = 'Certified Seed Dealer Licence';
+              else if (rawType.toLowerCase().includes('pesticide') || rawType.toLowerCase().includes('insect') || rawType.includes('कीटकनाशक')) licName = 'Insecticide / Pesticide Licence';
+              else licName = `${rawType} Licence`;
             }
 
             return (
@@ -732,65 +764,238 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
 
       {/* =================== TAB 4: PESTICIDE REGISTER =================== */}
       {!loading && activeTab === 'pesticides' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
-          <div className="p-4 bg-emerald-950 text-white font-bold text-xs flex justify-between items-center">
-            <span>{isMr ? 'कीटकनाशके नियम, १९७१ - अनुसूची २ अन्वये वैधानिक नोंदवही' : 'Statutory Pesticides Register - Schedule II (Insecticide Act, 1971)'}</span>
-            <span className="text-[11px] text-emerald-300">
-              {isMr ? 'कृषी विभाग तपासणीसाठी प्रमाणित' : 'Certified for Agricultural Inspection'}
-            </span>
+        <div className="space-y-4">
+          {/* Sub-view switcher for Pesticides */}
+          <div className="flex items-center gap-2 no-print">
+            <button
+              type="button"
+              onClick={() => setPesticideSubView('stock')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                pesticideSubView === 'stock'
+                  ? 'bg-emerald-800 text-white shadow-xs'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{isMr ? 'आवक-जावक व साठा नोंदवही' : 'Inward & Stock Register'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPesticideSubView('sales')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                pesticideSubView === 'sales'
+                  ? 'bg-emerald-800 text-white shadow-xs'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>{isMr ? 'तपशीलवार विक्री नोंदवही (अनुसूची २)' : 'Detailed Sales Register (Schedule II)'}</span>
+            </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                <tr>
-                  <th className="p-2.5 text-center">#</th>
-                  <th className="p-2.5">{getTranslation('date', currentLang)}</th>
-                  <th className="p-2.5">{isMr ? 'पावती क्र.' : 'Invoice No.'}</th>
-                  <th className="p-2.5">{isMr ? 'शेतकऱ्याचे नाव व गाव' : 'Farmer & Village'}</th>
-                  <th className="p-2.5">{getTranslation('mobile', currentLang)}</th>
-                  <th className="p-2.5">{getTranslation('crop_used', currentLang)}</th>
-                  <th className="p-2.5">{getTranslation('pest_targeted', currentLang)}</th>
-                  <th className="p-2.5">{isMr ? 'कीटकनाशकाचे नाव' : 'Product Name'}</th>
-                  <th className="p-2.5 text-center">{getTranslation('batch', currentLang)}</th>
-                  <th className="p-2.5 text-center">{getTranslation('expiry', currentLang)}</th>
-                  <th className="p-2.5 text-center">{getTranslation('qty', currentLang)}</th>
-                  <th className="p-2.5 text-center">{isMr ? 'स्वाक्षरी' : 'Signature'}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {pesticideRegister.length === 0 ? (
-                  <tr>
-                    <td colSpan={12} className="py-12 text-center text-slate-400">
-                      {getTranslation('no_records_found', currentLang)}
-                    </td>
-                  </tr>
-                ) : (
-                  pesticideRegister.map((p, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                      <td className="p-2.5 text-center font-mono text-slate-500">{idx + 1}</td>
-                      <td className="p-2.5 font-mono text-slate-700">{formatDate(p.invoice_date)}</td>
-                      <td className="p-2.5 font-mono font-bold text-slate-900">{p.invoice_no}</td>
-                      <td className="p-2.5">
-                        <div className="font-bold text-slate-900">{p.customer_name}</div>
-                        <div className="text-[10px] text-slate-500">{p.customer_village}</div>
-                      </td>
-                      <td className="p-2.5 font-mono text-slate-600">{p.customer_mobile || '-'}</td>
-                      <td className="p-2.5 font-medium text-emerald-800">{p.crop || '-'}</td>
-                      <td className="p-2.5 text-slate-700">{p.pest || '-'}</td>
-                      <td className="p-2.5 font-bold text-slate-900">{p.product_name}</td>
-                      <td className="p-2.5 text-center font-mono text-[10px]">{p.batch_number}</td>
-                      <td className="p-2.5 text-center font-mono text-[10px] text-slate-600">{formatDate(p.expiry_date)}</td>
-                      <td className="p-2.5 text-center font-bold font-mono">{p.quantity} {p.unit}</td>
-                      <td className="p-2.5 text-center text-[10px] text-slate-400 italic">
-                        {isMr ? 'नोंद केली' : 'Signed'}
-                      </td>
+          {/* Sub-view 1: Pesticide Stock Register (Inward, Outward & Balance) */}
+          {pesticideSubView === 'stock' && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
+              <div className="p-4 bg-emerald-950 text-white font-bold text-xs flex justify-between items-center">
+                <span>{isMr ? 'कीटकनाशके आवक-जावक व साठा नोंदवही (Insecticide Stock Register)' : 'Statutory Insecticide / Agrochemical Stock Register'}</span>
+                <span className="text-[11px] text-emerald-300">
+                  {isMr ? 'कीटकनाशके नियम, १९७१ अन्वये साठा तपासणीसाठी' : 'Insecticides Rules, 1971 Stock Verification'}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                    <tr>
+                      <th className="p-2.5 text-center w-10 border-r border-slate-200">#</th>
+                      <th className="p-2.5 border-r border-slate-200">{isMr ? 'कीटकनाशकाचे नाव' : 'Product Name'}</th>
+                      <th className="p-2.5 border-r border-slate-200">{isMr ? 'रासायनिक घटक व CIB क्र.' : 'Technical & CIB No.'}</th>
+                      <th className="p-2.5 border-r border-slate-200">{isMr ? 'उत्पादक कंपनी' : 'Manufacturer'}</th>
+                      <th className="p-2.5 text-center border-r border-slate-200 w-16">{isMr ? 'एकक' : 'Unit'}</th>
+                      <th className="p-2.5 text-right border-r border-slate-200 bg-slate-100/50">{isMr ? 'मागील शिल्लक' : 'Opening Stock'}</th>
+                      <th className="p-2.5 text-right border-r border-slate-200 bg-emerald-50/50 text-emerald-900">{isMr ? 'चालू आवक' : 'Inward'}</th>
+                      <th className="p-2.5 text-right border-r border-slate-200 font-bold bg-slate-100/60">{isMr ? 'एकूण साठा' : 'Total Available'}</th>
+                      <th className="p-2.5 text-right border-r border-slate-200 bg-amber-50/50 text-amber-900">{isMr ? 'चालू विक्री' : 'Sales'}</th>
+                      <th className="p-2.5 text-right border-r border-slate-200 font-bold bg-blue-50/50 text-blue-900">{isMr ? 'अखेर शिल्लक' : 'Closing Stock'}</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pesticideStockRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center text-slate-400">
+                          {isMr ? 'या महिन्यासाठी कोणतीही कीटकनाशके साठा नोंद आढळली नाही.' : 'No pesticide records found for this month.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      pesticideStockRows.map((r, idx) => {
+                        const totalAvailable = Number((r.opening_stock + r.inward).toFixed(2));
+                        return (
+                          <tr key={r.product_id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-2.5 text-center font-mono text-slate-500 border-r border-slate-100">{idx + 1}</td>
+                            <td className="p-2.5 font-bold text-slate-900 border-r border-slate-100">
+                              <div>{r.product_name}</div>
+                            </td>
+                            <td className="p-2.5 text-slate-700 border-r border-slate-100">
+                              <div className="font-medium text-emerald-950">{r.technical_name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">{r.cib_no}</div>
+                            </td>
+                            <td className="p-2.5 text-slate-700 border-r border-slate-100 font-medium">
+                              {r.company}
+                            </td>
+                            <td className="p-2.5 text-center font-mono text-[11px] text-slate-600 border-r border-slate-100">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 font-semibold">{r.unit}</span>
+                            </td>
+                            <td className="p-2.5 text-right font-mono text-slate-700 border-r border-slate-100 bg-slate-50/30">
+                              {r.opening_stock.toFixed(2)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-semibold text-emerald-800 border-r border-slate-100 bg-emerald-50/30">
+                              {r.inward.toFixed(2)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-slate-900 border-r border-slate-100 bg-slate-100/30">
+                              {totalAvailable.toFixed(2)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-semibold text-amber-800 border-r border-slate-100 bg-amber-50/30">
+                              {r.sales.toFixed(2)}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-blue-900 border-r border-slate-100 bg-blue-50/30">
+                              {r.closing_stock.toFixed(2)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  {pesticideStockRows.length > 0 && (
+                    <tfoot className="bg-slate-100 text-slate-900 font-bold border-t-2 border-slate-300 text-xs">
+                      <tr>
+                        <td colSpan={5} className="p-2.5 text-right uppercase tracking-wider">
+                          {isMr ? 'एकूण प्रमाण:' : 'TOTAL QUANTITY:'}
+                        </td>
+                        <td className="p-2.5 text-right font-mono">{totalPestOpening.toFixed(2)}</td>
+                        <td className="p-2.5 text-right font-mono text-emerald-800">{totalPestInward.toFixed(2)}</td>
+                        <td className="p-2.5 text-right font-mono text-slate-950">{(totalPestOpening + totalPestInward).toFixed(2)}</td>
+                        <td className="p-2.5 text-right font-mono text-amber-800">{totalPestSales.toFixed(2)}</td>
+                        <td className="p-2.5 text-right font-mono text-blue-900">{totalPestClosing.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+
+              {/* Statutory Signatures & Footer Note */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-end gap-6 text-xs text-slate-700">
+                <div className="space-y-1">
+                  <div className="font-semibold text-slate-800">
+                    {isMr ? 'वैधानिक घोषणापत्र:' : 'Statutory Declaration:'}
+                  </div>
+                  <p className="text-[11px] text-slate-500 max-w-xl">
+                    {isMr 
+                      ? 'सदर कीटकनाशके ही कीटकनाशके कायदा, १९६८ व नियम, १९७१ मधील सर्व वैधानिक तरतुदींनुसार नोंदणीकृत व प्रमाणित आहेत.'
+                      : 'All insecticides/agrochemicals accounted above comply with Insecticides Act 1968 and Rules 1971.'}
+                  </p>
+                </div>
+
+                <div className="text-center w-56 shrink-0">
+                  <div className="h-10"></div>
+                  <div className="border-t border-slate-400 pt-1 font-bold text-slate-900 text-xs">
+                    {isMr ? 'अधिकृत विक्रेत्याची स्वाक्षरी' : 'Authorized Signatory'}
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    {bizSettings?.shop_name}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sub-view 2: Detailed Retail Sales Register (Schedule II) */}
+          {pesticideSubView === 'sales' && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
+              <div className="p-4 bg-emerald-950 text-white font-bold text-xs flex justify-between items-center">
+                <span>{isMr ? 'कीटकनाशके नियम, १९७१ - अनुसूची २ अन्वये वैधानिक नोंदवही' : 'Statutory Pesticides Register - Schedule II (Insecticide Act, 1971)'}</span>
+                <span className="text-[11px] text-emerald-300">
+                  {isMr ? 'कृषी विभाग तपासणीसाठी प्रमाणित' : 'Certified for Agricultural Inspection'}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                    <tr>
+                      <th className="p-2.5 text-center">#</th>
+                      <th className="p-2.5">{getTranslation('date', currentLang)}</th>
+                      <th className="p-2.5">{isMr ? 'पावती क्र.' : 'Invoice No.'}</th>
+                      <th className="p-2.5">{isMr ? 'शेतकऱ्याचे नाव व गाव' : 'Farmer & Village'}</th>
+                      <th className="p-2.5">{getTranslation('mobile', currentLang)}</th>
+                      <th className="p-2.5">{getTranslation('crop_used', currentLang)}</th>
+                      <th className="p-2.5">{getTranslation('pest_targeted', currentLang)}</th>
+                      <th className="p-2.5">{isMr ? 'कीटकनाशकाचे नाव' : 'Product Name'}</th>
+                      <th className="p-2.5 text-center">{getTranslation('batch', currentLang)}</th>
+                      <th className="p-2.5 text-center">{getTranslation('expiry', currentLang)}</th>
+                      <th className="p-2.5 text-center">{getTranslation('qty', currentLang)}</th>
+                      <th className="p-2.5 text-center">{isMr ? 'स्वाक्षरी' : 'Signature'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pesticideRegister.length === 0 ? (
+                      <tr>
+                        <td colSpan={12} className="py-12 text-center text-slate-400">
+                          {getTranslation('no_records_found', currentLang)}
+                        </td>
+                      </tr>
+                    ) : (
+                      pesticideRegister.map((p, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-2.5 text-center font-mono text-slate-500">{idx + 1}</td>
+                          <td className="p-2.5 font-mono text-slate-700">{formatDate(p.invoice_date || p.date)}</td>
+                          <td className="p-2.5 font-mono font-bold text-slate-900">{p.invoice_no}</td>
+                          <td className="p-2.5">
+                            <div className="font-bold text-slate-900">{p.customer_name || p.farmer_name}</div>
+                            <div className="text-[10px] text-slate-500">{p.customer_village || p.farmer_village}</div>
+                          </td>
+                          <td className="p-2.5 font-mono text-slate-600">{p.customer_mobile || p.farmer_mobile || '-'}</td>
+                          <td className="p-2.5 font-medium text-emerald-800">{p.crop || p.crop_treated || '-'}</td>
+                          <td className="p-2.5 text-slate-700">{p.pest || p.remarks || '-'}</td>
+                          <td className="p-2.5 font-bold text-slate-900">{p.product_name}</td>
+                          <td className="p-2.5 text-center font-mono text-[10px]">{p.batch_number}</td>
+                          <td className="p-2.5 text-center font-mono text-[10px] text-slate-600">{p.expiry_date ? formatDate(p.expiry_date) : '-'}</td>
+                          <td className="p-2.5 text-center font-bold font-mono">{p.quantity} {p.unit}</td>
+                          <td className="p-2.5 text-center text-[10px] text-slate-400 italic">
+                            {isMr ? 'नोंद केली' : 'Signed'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Statutory Signatures & Footer Note */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-end gap-6 text-xs text-slate-700">
+                <div className="space-y-1">
+                  <div className="font-semibold text-slate-800">
+                    {isMr ? 'वैधानिक घोषणापत्र:' : 'Statutory Declaration:'}
+                  </div>
+                  <p className="text-[11px] text-slate-500 max-w-xl">
+                    {isMr 
+                      ? 'सदर कीटकनाशके ही कीटकनाशके कायदा, १९६८ व नियम, १९७१ मधील सर्व वैधानिक तरतुदींनुसार नोंदणीकृत व प्रमाणित आहेत.'
+                      : 'All insecticides/agrochemicals accounted above comply with Insecticides Act 1968 and Rules 1971.'}
+                  </p>
+                </div>
+
+                <div className="text-center w-56 shrink-0">
+                  <div className="h-10"></div>
+                  <div className="border-t border-slate-400 pt-1 font-bold text-slate-900 text-xs">
+                    {isMr ? 'अधिकृत विक्रेत्याची स्वाक्षरी' : 'Authorized Signatory'}
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    {bizSettings?.shop_name}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -800,7 +1005,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95">
             <div className="px-5 py-3.5 bg-slate-800 text-white flex items-center justify-between">
               <h3 className="font-bold text-sm">
-                {isMr ? 'परवाना माहिती अद्यतनित करा' : 'Update Licence'}: {editingLicence.licence_name}
+                {isMr ? 'परवाना माहिती अद्यतनित करा' : 'Update Licence'}: {editingLicence.licence_type || (editingLicence as any).licence_name || 'Licence'}
               </h3>
               <button 
                 type="button" 

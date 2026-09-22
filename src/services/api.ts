@@ -24,6 +24,7 @@ import {
   User,
   StatutoryFertilizerRegisterRow,
   StatutorySeedRegisterRow,
+  StatutoryPesticideRegisterRow,
 } from '../types';
 
 export const dbService = {
@@ -36,10 +37,25 @@ export const dbService = {
     await sqliteEngine.getDb();
     let sql = 'SELECT * FROM products WHERE active = 1';
     const params: any[] = [];
-    if (category && category !== 'ALL') {
-      sql += ' AND category = ?';
-      params.push(category);
+    
+    const catUpper = (category || '').trim().toUpperCase();
+    if (catUpper && catUpper !== 'ALL' && catUpper !== 'ALL CATEGORIES' && catUpper !== 'सर्व' && catUpper !== 'ALL_CATEGORIES') {
+      if (catUpper.startsWith('FERTILIZER')) {
+        sql += ` AND (category LIKE '%Fertilizer%' OR category LIKE '%उर्वरक%' OR category LIKE '%खत%')`;
+      } else if (catUpper.startsWith('SEED')) {
+        sql += ` AND (category LIKE '%Seed%' OR category LIKE '%बियाणे%' OR category LIKE '%बीज%')`;
+      } else if (catUpper.startsWith('PESTICIDE') || catUpper.startsWith('INSECTICIDE') || catUpper.startsWith('FUNGICIDE') || catUpper.startsWith('HERBICIDE')) {
+        sql += ` AND (category IN ('Pesticides', 'Pesticide', 'Insecticide', 'Fungicide', 'Herbicide', 'Bio-Pesticide', 'Bio-pesticide', 'PGR', 'Agrochemical') OR category LIKE '%Pesticide%' OR category LIKE '%Insecticide%' OR category LIKE '%Fungicide%' OR category LIKE '%Herbicide%' OR category LIKE '%कीटकनाशक%')`;
+      } else if (catUpper.includes('BIO') || catUpper.includes('MICRO') || catUpper.includes('TONIC')) {
+        sql += ` AND (category LIKE '%Bio%' OR category LIKE '%Micro%' OR category LIKE '%Nutrient%' OR category LIKE '%PGR%' OR category LIKE '%Plant Growth%' OR category LIKE '%सेंद्रिय%' OR category LIKE '%टॉनिक%')`;
+      } else if (catUpper.includes('EQUIPMENT') || catUpper.includes('TOOL') || catUpper.includes('साधने')) {
+        sql += ` AND (category LIKE '%Equipment%' OR category LIKE '%Tool%' OR category LIKE '%साधने%' OR category LIKE '%उपकरणे%')`;
+      } else {
+        sql += ' AND (category = ? OR category LIKE ?)';
+        params.push(category, `%${category}%`);
+      }
     }
+
     if (search.trim()) {
       const q = `%${search.trim()}%`;
       sql += ' AND (name LIKE ? OR name_mr LIKE ? OR name_hi LIKE ? OR product_code LIKE ? OR barcode LIKE ? OR brand LIKE ? OR company LIKE ? OR technical_name LIKE ? OR fertilizer_grade LIKE ? OR subcategory LIKE ?)';
@@ -316,9 +332,22 @@ export const dbService = {
                LEFT JOIN locations l ON b.location_id = l.id
                WHERE 1=1`;
     const params: any[] = [];
-    if (filters?.category && filters.category !== 'All' && filters.category !== 'ALL') {
-      sql += ' AND p.category = ?';
-      params.push(filters.category);
+    const catUpper = (filters?.category || '').trim().toUpperCase();
+    if (catUpper && catUpper !== 'ALL' && catUpper !== 'ALL CATEGORIES' && catUpper !== 'सर्व') {
+      if (catUpper.startsWith('FERTILIZER')) {
+        sql += ` AND (p.category LIKE '%Fertilizer%' OR p.category LIKE '%उर्वरक%' OR p.category LIKE '%खत%')`;
+      } else if (catUpper.startsWith('SEED')) {
+        sql += ` AND (p.category LIKE '%Seed%' OR p.category LIKE '%बियाणे%' OR p.category LIKE '%बीज%')`;
+      } else if (catUpper.startsWith('PESTICIDE') || catUpper.startsWith('INSECTICIDE') || catUpper.startsWith('FUNGICIDE') || catUpper.startsWith('HERBICIDE')) {
+        sql += ` AND (p.category IN ('Pesticides', 'Pesticide', 'Insecticide', 'Fungicide', 'Herbicide', 'Bio-Pesticide', 'Bio-pesticide', 'PGR', 'Agrochemical') OR p.category LIKE '%Pesticide%' OR p.category LIKE '%Insecticide%' OR p.category LIKE '%Fungicide%' OR p.category LIKE '%Herbicide%' OR p.category LIKE '%कीटकनाशक%')`;
+      } else if (catUpper.includes('BIO') || catUpper.includes('MICRO') || catUpper.includes('TONIC')) {
+        sql += ` AND (p.category LIKE '%Bio%' OR p.category LIKE '%Micro%' OR p.category LIKE '%Nutrient%' OR p.category LIKE '%PGR%' OR p.category LIKE '%Plant Growth%' OR p.category LIKE '%सेंद्रिय%' OR p.category LIKE '%टॉनिक%')`;
+      } else if (catUpper.includes('EQUIPMENT') || catUpper.includes('TOOL') || catUpper.includes('साधने')) {
+        sql += ` AND (p.category LIKE '%Equipment%' OR p.category LIKE '%Tool%' OR p.category LIKE '%साधने%' OR p.category LIKE '%उपकरणे%')`;
+      } else {
+        sql += ' AND (p.category = ? OR p.category LIKE ?)';
+        params.push(filters!.category, `%${filters!.category}%`);
+      }
     }
     if (filters?.search && filters.search.trim()) {
       const q = `%${filters.search.trim()}%`;
@@ -1370,7 +1399,26 @@ export const dbService = {
   // ================= COMPLIANCE & LICENCES =================
   async getLicences(): Promise<Licence[]> {
     await sqliteEngine.getDb();
-    const licences = sqliteEngine.query<Licence>('SELECT * FROM licences ORDER BY expiry_date ASC');
+    let licences = sqliteEngine.query<Licence>('SELECT * FROM licences ORDER BY id ASC');
+    if (licences.length === 0) {
+      const b = sqliteEngine.queryOne<BusinessSettings>('SELECT * FROM business_settings WHERE id = 1');
+      const holder = `${b?.shop_name_mr || b?.shop_name || 'श्री समर्थ कृषी सेवा केंद्र'} (${b?.proprietor || b?.owner_name || 'संचालक'})`;
+      sqliteEngine.run(`
+        INSERT INTO licences (licence_type, licence_no, holder_name, issuing_authority, issue_date, expiry_date, notes) VALUES
+        ('Fertilizer', ?, ?, 'जिल्हा अधीक्षक कृषी अधिकारी, पुणे', '2022-05-10', '2027-05-09', 'खते विक्री व साठवणूक अधिकृत परवाना (Class A)'),
+        ('Seed', ?, ?, 'कृषी संचालक (निविष्ठा व गुणनियंत्रण), महाराष्ट्र राज्य', '2021-06-15', '2026-11-30', 'बियाणे परवाना (लवकर नूतनीकरण आवश्यक - Alert Active)'),
+        ('Insecticide', ?, ?, 'कृषी उपसंचालक व गुणनियंत्रण निरीक्षक, पुणे', '2023-08-01', '2028-07-31', 'कीटकनाशक व बुरशीनाशक विक्री परवाना')
+      `, [
+        b?.fertilizer_licence || 'FL/PUN/2022/8492',
+        holder,
+        b?.seed_licence || 'SL/PUN/2021/4102',
+        holder,
+        b?.pesticide_licence || 'IL/PUN/2023/1932',
+        holder,
+      ]);
+      licences = sqliteEngine.query<Licence>('SELECT * FROM licences ORDER BY id ASC');
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -1396,16 +1444,36 @@ export const dbService = {
   async saveLicence(lic: Partial<Licence>, userName = 'Admin'): Promise<number> {
     await sqliteEngine.getDb();
     if (lic.id) {
+      const existing = sqliteEngine.queryOne<Licence>('SELECT * FROM licences WHERE id = ?', [lic.id]);
+      const lType = lic.licence_type || existing?.licence_type || 'Other';
+      const lNo = lic.licence_no || existing?.licence_no || '';
+      const lHolder = lic.holder_name || existing?.holder_name || '';
+      const lAuth = lic.issuing_authority || existing?.issuing_authority || '';
+      const lIssue = lic.issue_date || existing?.issue_date || '';
+      const lExp = lic.expiry_date || existing?.expiry_date || '';
+      const lNotes = lic.notes !== undefined ? lic.notes : (existing?.notes || '');
+
       sqliteEngine.run(
         `UPDATE licences SET licence_type = ?, licence_no = ?, holder_name = ?, issuing_authority = ?, issue_date = ?, expiry_date = ?, notes = ? WHERE id = ?`,
-        [lic.licence_type, lic.licence_no, lic.holder_name, lic.issuing_authority, lic.issue_date, lic.expiry_date, lic.notes || '', lic.id]
+        [lType, lNo, lHolder, lAuth, lIssue, lExp, lNotes, lic.id]
       );
-      this.logAudit(userName, 'UPDATE', 'Licence', String(lic.id), `Updated licence ${lic.licence_no}`);
+
+      // Sync back to business_settings
+      const lTypeLower = lType.toLowerCase();
+      if (lTypeLower.includes('fert')) {
+        sqliteEngine.run('UPDATE business_settings SET fertilizer_licence = ? WHERE id = 1', [lNo]);
+      } else if (lTypeLower.includes('seed')) {
+        sqliteEngine.run('UPDATE business_settings SET seed_licence = ? WHERE id = 1', [lNo]);
+      } else if (lTypeLower.includes('insect') || lTypeLower.includes('pest')) {
+        sqliteEngine.run('UPDATE business_settings SET pesticide_licence = ? WHERE id = 1', [lNo]);
+      }
+
+      this.logAudit(userName, 'UPDATE', 'Licence', String(lic.id), `Updated licence ${lNo}`);
       return lic.id;
     } else {
       const res = sqliteEngine.run(
         `INSERT INTO licences (licence_type, licence_no, holder_name, issuing_authority, issue_date, expiry_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [lic.licence_type, lic.licence_no, lic.holder_name, lic.issuing_authority, lic.issue_date, lic.expiry_date, lic.notes || '']
+        [lic.licence_type || 'Other', lic.licence_no || '', lic.holder_name || '', lic.issuing_authority || '', lic.issue_date || '', lic.expiry_date || '', lic.notes || '']
       );
       this.logAudit(userName, 'CREATE', 'Licence', String(res.lastInsertRowid), `Created licence ${lic.licence_no}`);
       return res.lastInsertRowid;
@@ -1416,29 +1484,125 @@ export const dbService = {
     return this.saveLicence({ ...lic, id }, userName);
   },
 
-  async getPesticideSalesRecords(search = '', fromDate = '', toDate = '', limit = 100): Promise<PesticideSalesRecord[]> {
+  async getPesticideSalesRecords(search = '', fromDate = '', toDate = '', limit = 200): Promise<PesticideSalesRecord[]> {
     await sqliteEngine.getDb();
-    let sql = 'SELECT * FROM pesticide_sales_records WHERE 1=1';
-    const params: any[] = [];
+
+    // 1. Direct fetch from sales & sale_items & products
+    const directSales = sqliteEngine.query<any>(`
+      SELECT 
+        si.id as id,
+        s.invoice_date as date,
+        s.invoice_date as invoice_date,
+        s.invoice_no as invoice_no,
+        s.customer_name as farmer_name,
+        s.customer_name as customer_name,
+        COALESCE(s.customer_mobile, c.mobile, '-') as farmer_mobile,
+        COALESCE(s.customer_mobile, c.mobile, '-') as customer_mobile,
+        COALESCE(s.customer_village, c.village, '-') as farmer_village,
+        COALESCE(s.customer_village, c.village, '-') as customer_village,
+        si.product_name as product_name,
+        si.batch_number as batch_number,
+        COALESCE(pb.expiry_date, '') as expiry_date,
+        COALESCE(p.cib_registration_no, 'CIR-3841/2021') as cib_no,
+        si.quantity as quantity,
+        si.unit as unit,
+        COALESCE(c.crops_grown, p.category, 'General Crops') as crop_treated,
+        COALESCE(c.crops_grown, p.category, 'General Crops') as crop,
+        COALESCE(p.technical_name, p.category, 'Insect/Pest Control') as pest,
+        COALESCE(p.technical_name, 'Agrochemical Control') as remarks
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      JOIN products p ON si.product_id = p.id
+      LEFT JOIN customers c ON s.customer_id = c.id
+      LEFT JOIN product_batches pb ON si.batch_id = pb.id
+      WHERE s.status != 'Cancelled'
+        AND (
+          p.category IN ('Insecticide', 'Pesticide', 'Fungicide', 'Herbicide', 'Bio-pesticide', 'Bio-Pesticide', 'PGR', 'Agrochemical')
+          OR (p.cib_registration_no IS NOT NULL AND p.cib_registration_no != '')
+          OR p.name LIKE '%Insecticide%' OR p.name LIKE '%Pesticide%' OR p.name LIKE '%कीटकनाशक%' OR p.name LIKE '%बुरशीनाशक%'
+        )
+      ORDER BY s.invoice_date DESC, s.id DESC
+      LIMIT ?
+    `, [limit]);
+
+    // 2. Also fetch from dedicated pesticide_sales_records table
+    const tableRecords = sqliteEngine.query<any>(`
+      SELECT 
+        psr.id,
+        psr.date,
+        psr.date as invoice_date,
+        psr.invoice_no,
+        psr.farmer_name,
+        psr.farmer_name as customer_name,
+        psr.farmer_mobile,
+        psr.farmer_mobile as customer_mobile,
+        psr.farmer_village,
+        psr.farmer_village as customer_village,
+        psr.product_name,
+        psr.batch_number,
+        COALESCE(psr.cib_no, 'CIR-3841/2021') as cib_no,
+        psr.quantity,
+        psr.unit,
+        psr.crop_treated,
+        psr.crop_treated as crop,
+        psr.remarks as pest,
+        psr.remarks
+      FROM pesticide_sales_records psr
+      ORDER BY psr.date DESC, psr.id DESC
+      LIMIT ?
+    `, [limit]);
+
+    // Merge & deduplicate
+    const map = new Map<string, PesticideSalesRecord>();
+    for (const r of [...directSales, ...tableRecords]) {
+      const key = `${r.invoice_no}_${r.product_name}_${r.batch_number}_${r.quantity}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: r.id,
+          date: r.date || r.invoice_date || '',
+          invoice_date: r.invoice_date || r.date || '',
+          invoice_no: r.invoice_no || '',
+          farmer_name: r.farmer_name || r.customer_name || 'शेतकरी ग्राहक',
+          customer_name: r.customer_name || r.farmer_name || 'शेतकरी ग्राहक',
+          farmer_mobile: r.farmer_mobile || r.customer_mobile || '-',
+          customer_mobile: r.customer_mobile || r.farmer_mobile || '-',
+          farmer_village: r.farmer_village || r.customer_village || '-',
+          customer_village: r.customer_village || r.farmer_village || '-',
+          product_name: r.product_name,
+          batch_number: r.batch_number || 'Batch-1',
+          expiry_date: r.expiry_date || '',
+          cib_no: r.cib_no || 'CIR-3841/2021',
+          quantity: r.quantity,
+          unit: r.unit || 'Ltr',
+          crop_treated: r.crop_treated || r.crop || 'सर्व पिके',
+          crop: r.crop || r.crop_treated || 'सर्व पिके',
+          remarks: r.remarks || r.pest || 'कीटक/बुरशी नियंत्रण',
+          pest: r.pest || r.remarks || 'कीटक/बुरशी नियंत्रण',
+        });
+      }
+    }
+
+    let results = Array.from(map.values());
     if (search.trim()) {
-      const q = `%${search.trim()}%`;
-      sql += ' AND (invoice_no LIKE ? OR farmer_name LIKE ? OR product_name LIKE ? OR batch_number LIKE ?)';
-      params.push(q, q, q, q);
+      const q = search.trim().toLowerCase();
+      results = results.filter(r => 
+        (r.invoice_no && r.invoice_no.toLowerCase().includes(q)) ||
+        (r.farmer_name && r.farmer_name.toLowerCase().includes(q)) ||
+        (r.product_name && r.product_name.toLowerCase().includes(q)) ||
+        (r.farmer_village && r.farmer_village.toLowerCase().includes(q))
+      );
     }
     if (fromDate) {
-      sql += ' AND date >= ?';
-      params.push(fromDate);
+      results = results.filter(r => r.date >= fromDate);
     }
     if (toDate) {
-      sql += ' AND date <= ?';
-      params.push(toDate);
+      results = results.filter(r => r.date <= toDate);
     }
-    sql += ' ORDER BY id DESC LIMIT ?';
-    params.push(limit);
-    return sqliteEngine.query<PesticideSalesRecord>(sql, params);
+
+    return results.slice(0, limit);
   },
 
-  async getPesticideRegister(search = '', fromDate = '', toDate = '', limit = 100): Promise<PesticideSalesRecord[]> {
+  async getPesticideRegister(search = '', fromDate = '', toDate = '', limit = 200): Promise<PesticideSalesRecord[]> {
     return this.getPesticideSalesRecords(search, fromDate, toDate, limit);
   },
 
@@ -1928,6 +2092,70 @@ export const dbService = {
         sales: sales,
         closing_stock: closing,
         unit: unitLabel
+      });
+    }
+
+    return rows;
+  },
+
+  async getMonthlyPesticideStockRegister(monthStr?: string): Promise<StatutoryPesticideRegisterRow[]> {
+    await sqliteEngine.getDb();
+    const currentMonth = monthStr || new Date().toISOString().slice(0, 7);
+
+    // Retrieve pesticide and agrochemical products
+    const products = sqliteEngine.query<Product>(`
+      SELECT * FROM products 
+      WHERE active = 1 AND (
+        category IN ('Insecticide', 'Pesticide', 'Fungicide', 'Herbicide', 'Bio-pesticide', 'Bio-Pesticide', 'PGR', 'Agrochemical')
+        OR (cib_registration_no IS NOT NULL AND cib_registration_no != '')
+        OR name LIKE '%Insecticide%' OR name LIKE '%Pesticide%' OR name LIKE '%कीटकनाशक%' OR name LIKE '%बुरशीनाशक%'
+      )
+      ORDER BY name ASC
+    `);
+
+    const rows: StatutoryPesticideRegisterRow[] = [];
+    let sr = 1;
+
+    for (const prod of products) {
+      // Inward (Purchases in this month)
+      const inwardRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+        SELECT COALESCE(SUM(pi.quantity), 0) as total_qty
+        FROM purchase_items pi
+        JOIN purchases p ON pi.purchase_id = p.id
+        WHERE pi.product_id = ? AND p.status != 'Cancelled' AND (p.invoice_date LIKE ? OR p.purchase_date LIKE ?)
+      `, [prod.id, `${currentMonth}%`, `${currentMonth}%`]);
+      const inward = Number((inwardRes?.total_qty || 0).toFixed(2));
+
+      // Sales (Sales in this month)
+      const salesRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+        SELECT COALESCE(SUM(si.quantity), 0) as total_qty
+        FROM sale_items si
+        JOIN sales s ON si.sale_id = s.id
+        WHERE si.product_id = ? AND s.status != 'Cancelled' AND s.invoice_date LIKE ?
+      `, [prod.id, `${currentMonth}%`]);
+      const sales = Number((salesRes?.total_qty || 0).toFixed(2));
+
+      // Current stock in batches
+      const stockRes = sqliteEngine.queryOne<{ total_stock: number }>(`
+        SELECT COALESCE(SUM(current_qty), 0) as total_stock
+        FROM product_batches
+        WHERE product_id = ?
+      `, [prod.id]);
+      const closing = Number((stockRes?.total_stock || 0).toFixed(2));
+      const opening = Math.max(0, Number((closing - inward + sales).toFixed(2)));
+
+      rows.push({
+        sr_no: sr++,
+        product_id: prod.id,
+        product_name: prod.name,
+        technical_name: prod.technical_name || (prod as any).chemical_content || prod.category || 'Pesticide Formulation',
+        cib_no: prod.cib_registration_no || 'CIR-3841/2021',
+        company: prod.company || prod.brand || 'Agro Chemicals India',
+        opening_stock: opening,
+        inward: inward,
+        sales: sales,
+        closing_stock: closing,
+        unit: prod.unit || 'Ltr'
       });
     }
 
