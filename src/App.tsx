@@ -31,6 +31,7 @@ import { BusinessProfile } from './pages/BusinessProfile';
 import { UpdateNotification } from './components/common/UpdateNotification';
 import { FeedbackProvider, feedback } from './components/common/FeedbackContext';
 import { cloudBackupService } from './services/cloudBackupService';
+import { updateService } from './services/updateService';
 
 export default function App() {
   // App states
@@ -94,6 +95,7 @@ export default function App() {
         if (mounted) {
           setDbReady(true);
           cloudBackupService.init();
+          updateService.init();
         }
       } catch (err: any) {
         console.error('System init error:', err);

@@ -13,6 +13,8 @@ export interface UpdateState {
   latestVersion: string | null;
   hasUpdate: boolean;
   checking: boolean;
+  autoChecking: boolean;
+  lastCheckedTime: string | null;
   downloading: boolean;
   progress: ElectronDownloadProgress | null;
   updateReady: boolean;
@@ -26,10 +28,12 @@ type UpdateListener = (state: UpdateState) => void;
 class UpdateService {
   private state: UpdateState = {
     isElectron: false,
-    currentVersion: '1.0.13',
+    currentVersion: '1.0.14',
     latestVersion: null,
     hasUpdate: false,
     checking: false,
+    autoChecking: true,
+    lastCheckedTime: null,
     downloading: false,
     progress: null,
     updateReady: false,
@@ -46,6 +50,14 @@ class UpdateService {
     // Detect environment on construction if window exists
     if (typeof window !== 'undefined') {
       this.state.isElectron = !!window.electronAPI?.isElectron;
+      try {
+        const savedLastCheck = localStorage.getItem('krushi_last_update_check_time');
+        if (savedLastCheck) {
+          this.state.lastCheckedTime = savedLastCheck;
+        }
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -162,40 +174,47 @@ class UpdateService {
       });
     }
 
-    // Auto-checking triggers:
-    // 1. Check shortly after launch (2 seconds)
+    // Auto-checking triggers (Continuous Background Update Monitor):
+    // 1. Check shortly after launch (1 second)
     setTimeout(() => {
       this.checkForUpdates(true);
-    }, 2000);
+    }, 1000);
 
-    // 2. Check every 60 seconds whenever internet is active
+    // 2. Check continuously every 30 seconds whenever browser/electron is alive
     if (this.checkIntervalTimer) clearInterval(this.checkIntervalTimer);
     this.checkIntervalTimer = setInterval(() => {
       if (typeof navigator === 'undefined' || navigator.onLine) {
         this.checkForUpdates(true);
       }
-    }, 60 * 1000);
+    }, 30 * 1000);
 
     // 3. Check whenever browser/electron detects network connection re-established
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
-        console.log('[UpdateService] Internet connection restored, checking for updates...');
+        console.log('[UpdateService] Internet connection active, checking for updates...');
         this.checkForUpdates(true);
       });
 
-      // 4. Check whenever window regains focus
+      // 4. Check whenever window regains user focus
       window.addEventListener('focus', () => {
         this.checkForUpdates(true);
+      });
+
+      // 5. Check whenever tab/window becomes visible
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          this.checkForUpdates(true);
+        }
       });
     }
   }
 
   /**
-   * Check for updates from GitHub Releases & CDN
+   * Check for updates from Releases CDN
    * If autoDownload is true and running in Windows Desktop (Electron), it triggers download automatically!
    */
   public async checkForUpdates(autoDownload = true): Promise<UpdateState> {
-    if (this.state.downloading || this.state.updateReady) {
+    if (this.state.downloading || this.state.updateReady || this.state.checking) {
       return this.getState();
     }
 
@@ -308,6 +327,12 @@ class UpdateService {
       console.warn('Update check warning:', err);
     } finally {
       this.state.checking = false;
+      this.state.lastCheckedTime = new Date().toISOString();
+      try {
+        localStorage.setItem('krushi_last_update_check_time', this.state.lastCheckedTime);
+      } catch {
+        // ignore
+      }
       this.notify();
     }
 

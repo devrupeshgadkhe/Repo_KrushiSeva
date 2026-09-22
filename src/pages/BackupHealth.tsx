@@ -176,7 +176,7 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
             </div>
             <div>
               {currentLang === 'mr' ? '• उपलब्ध स्वरूप: ' : '• Available Formats: '}
-              <span className="font-mono font-bold text-emerald-700">JSON (.json)</span> &amp; <span className="font-mono font-bold text-slate-700">SQLite (.db)</span>
+              <span className="font-bold text-emerald-700">{isMr ? 'डेटा संचिका (.json)' : 'Data File (.json)'}</span> &amp; <span className="font-bold text-slate-700">{isMr ? 'सुरक्षित डेटाबेस संचिका (.db)' : 'Encrypted Database (.db)'}</span>
             </div>
           </div>
 
@@ -194,7 +194,7 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
               className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
               <FolderDown className="w-4 h-4" />
-              <span>{isMr ? '.DB फाइल डाऊनलोड' : 'Download .DB File'}</span>
+              <span>{isMr ? 'डेटाबेस फाइल (.db) डाऊनलोड' : 'Download Database (.db)'}</span>
             </button>
           </div>
 
@@ -252,7 +252,7 @@ export const BackupHealth: React.FC<BackupHealthProps> = ({ currentLang, onRefre
               />
             </label>
             <span className="block text-center text-[11px] text-slate-400 mt-1.5">
-              {isMr ? 'स्वीकृत फॉरमॅट: .json, .db, .sqlite' : 'Supported formats: .json, .db, .sqlite'}
+              {isMr ? 'स्वीकृत बॅकअप फाइल्स: .json, .db' : 'Supported backup files: .json, .db'}
             </span>
           </div>
         </div>

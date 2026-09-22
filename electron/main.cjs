@@ -261,11 +261,11 @@ function createWindow() {
       triggerUpdateCheck();
     }, 3000);
 
-    // Periodic check every 60 seconds whenever internet is active
+    // Continuous periodic update check every 30 seconds
     if (periodicCheckTimer) clearInterval(periodicCheckTimer);
     periodicCheckTimer = setInterval(() => {
       triggerUpdateCheck();
-    }, 60 * 1000);
+    }, 30 * 1000);
   });
 
   // Re-check for updates whenever window regains user focus
@@ -412,14 +412,44 @@ ipcMain.handle('quit-and-install', () => {
   console.log('[AutoUpdater] quit-and-install triggered');
   if (downloadedDirectInstaller && fs.existsSync(downloadedDirectInstaller)) {
     try {
-      console.log(`[AutoUpdater] Launching silent NSIS installer: ${downloadedDirectInstaller}`);
-      // Launch installer silently (/S) so it installs without requiring manual next-clicks
-      const child = spawn(downloadedDirectInstaller, ['/S'], { detached: true, stdio: 'ignore' });
-      child.unref();
-      setTimeout(() => {
-        app.quit();
-      }, 600);
-      return;
+      console.log(`[AutoUpdater] Launching silent NSIS installer with auto-restart: ${downloadedDirectInstaller}`);
+      const appExe = process.execPath;
+      const installerPath = downloadedDirectInstaller;
+
+      if (process.platform === 'win32') {
+        const tempBat = path.join(app.getPath('temp'), `krushi_erp_silent_update_${Date.now()}.bat`);
+        const batContent = `@echo off
+rem Wait for current ERP instance to close completely
+timeout /t 2 /nobreak >nul
+rem Execute silent NSIS upgrade (no wizard or manual steps needed)
+start /wait "" "${installerPath}" /S
+rem Small delay to allow desktop registration
+timeout /t 1 /nobreak >nul
+rem Automatically launch the newly upgraded application
+start "" "${appExe}"
+rem Delete temporary script
+del "%~f0" >nul 2>&1
+exit
+`;
+        fs.writeFileSync(tempBat, batContent, 'utf8');
+        const child = spawn('cmd.exe', ['/c', tempBat], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+        child.unref();
+        setTimeout(() => {
+          app.quit();
+        }, 500);
+        return;
+      } else {
+        const child = spawn(installerPath, ['/S'], { detached: true, stdio: 'ignore' });
+        child.unref();
+        setTimeout(() => {
+          app.quit();
+        }, 500);
+        return;
+      }
     } catch (e) {
       console.error('Failed to launch downloaded silent installer:', e);
     }
@@ -470,49 +500,70 @@ ipcMain.handle('send-cloud-backup', async (_event, payload) => {
   }
 
   // 2. Transmit to Google Apps Script / Google Drive
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbyAYKVB5xsVTtyKjQv1R-9sSRKsCJo8VZFHZPgqCaKOHZYpbRQJI_PgFvGACKZ32r8/exec';
+  const targetGasUrl = payload.gasUrl || 'https://script.google.com/macros/s/AKfycbyAYKVB5xsVTtyKjQv1R-9sSRKsCJo8VZFHZPgqCaKOHZYpbRQJI_PgFvGACKZ32r8/exec';
   try {
     const dataStr = JSON.stringify(payload);
     const cloudRes = await new Promise((resolve) => {
-      const parsed = new URL(GAS_URL);
-      const options = {
-        hostname: parsed.hostname,
-        path: parsed.pathname + parsed.search,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-          'Content-Length': Buffer.byteLength(dataStr)
-        },
-        timeout: 20000
-      };
+      try {
+        const parsed = new URL(targetGasUrl);
+        const options = {
+          hostname: parsed.hostname,
+          path: parsed.pathname + parsed.search,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+            'Content-Length': Buffer.byteLength(dataStr)
+          },
+          timeout: 25000
+        };
 
-      const req = https.request(options, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          https.get(res.headers.location, (redRes) => {
-            let body = '';
-            redRes.on('data', chunk => body += chunk);
-            redRes.on('end', () => resolve({ success: true, status: redRes.statusCode }));
-          }).on('error', (err) => resolve({ success: false, message: err.message }));
-          return;
-        }
-        let body = '';
-        res.on('data', chunk => body += chunk);
-        res.on('end', () => {
-          resolve({ success: res.statusCode >= 200 && res.statusCode < 400, status: res.statusCode });
+        const req = https.request(options, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            https.get(res.headers.location, (redRes) => {
+              let body = '';
+              redRes.on('data', chunk => body += chunk);
+              redRes.on('end', () => {
+                const ok = redRes.statusCode >= 200 && redRes.statusCode < 400;
+                resolve({ 
+                  success: ok, 
+                  status: redRes.statusCode, 
+                  message: ok ? 'Successfully uploaded to Google Drive' : `Google redirect returned HTTP ${redRes.statusCode}` 
+                });
+              });
+            }).on('error', (err) => resolve({ success: false, message: `Redirect error: ${err.message}` }));
+            return;
+          }
+          let body = '';
+          res.on('data', chunk => body += chunk);
+          res.on('end', () => {
+            const ok = res.statusCode >= 200 && res.statusCode < 400;
+            let errMsg = '';
+            if (!ok) {
+              if (res.statusCode === 404) {
+                errMsg = 'Google Apps Script URL 404 (Script not found or access not set to Anyone)';
+              } else {
+                errMsg = `Google Server returned HTTP ${res.statusCode}`;
+              }
+            }
+            resolve({ success: ok, status: res.statusCode, message: errMsg });
+          });
         });
-      });
 
-      req.on('error', (err) => resolve({ success: false, message: err.message }));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve({ success: false, message: 'Timeout' });
-      });
-      req.write(dataStr);
-      req.end();
+        req.on('error', (err) => resolve({ success: false, message: err.message }));
+        req.on('timeout', () => {
+          req.destroy();
+          resolve({ success: false, message: 'Google Drive request timed out (25s)' });
+        });
+        req.write(dataStr);
+        req.end();
+      } catch (parseErr) {
+        resolve({ success: false, message: `Invalid GAS URL: ${parseErr.message}` });
+      }
     });
 
     result.cloudSaved = cloudRes.success;
     result.status = cloudRes.status;
+    result.message = cloudRes.message || (cloudRes.success ? 'Google Drive Sync OK' : 'Google Drive Sync Failed');
   } catch (cloudErr) {
     result.cloudSaved = false;
     result.message = cloudErr.message;

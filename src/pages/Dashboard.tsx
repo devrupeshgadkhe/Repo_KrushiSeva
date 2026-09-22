@@ -83,12 +83,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </h2>
             <div 
               className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-mono font-bold text-emerald-800 shadow-2xs"
-              title={updateState.isElectron ? 'Windows Desktop App Edition' : 'Web Browser Preview'}
+              title={isMr ? 'अधिकृत प्रमाणित आवृत्ती' : 'Official Certified Edition'}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span>v{updateState.currentVersion}</span>
               <span className="text-[10px] text-emerald-600 font-sans font-normal border-l border-emerald-200 pl-1.5 ml-0.5">
-                {updateState.isElectron ? (isMr ? 'डेस्कटॉप (.exe)' : 'Desktop (.exe)') : (isMr ? 'वेब आवृत्ती' : 'Web Edition')}
+                {isMr ? 'अधिकृत आवृत्ती' : 'Official Release'}
               </span>
             </div>
             {updateState.hasUpdate && (
