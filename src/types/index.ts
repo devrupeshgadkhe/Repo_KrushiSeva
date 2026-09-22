@@ -239,6 +239,7 @@ export interface Sale {
   user_id?: number;
   user_name?: string;
   notes?: string;
+  is_gst_bill?: boolean;
   created_at: string;
 }
 

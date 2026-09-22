@@ -88,6 +88,7 @@ class SQLiteDatabaseManager {
       'ALTER TABLE sales ADD COLUMN customer_aadhar TEXT;',
       'ALTER TABLE sales ADD COLUMN customer_outstanding REAL DEFAULT 0;',
       'ALTER TABLE sales ADD COLUMN previous_balance REAL DEFAULT 0;',
+      'ALTER TABLE sales ADD COLUMN is_gst_bill INTEGER DEFAULT 1;',
       'ALTER TABLE sale_items ADD COLUMN mfg TEXT;',
       'ALTER TABLE sale_items ADD COLUMN company TEXT;',
       'ALTER TABLE sale_items ADD COLUMN content TEXT;',

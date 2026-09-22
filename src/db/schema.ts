@@ -341,6 +341,7 @@ CREATE TABLE IF NOT EXISTS sales (
   credit_amount REAL NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'Completed',
   notes TEXT,
+  is_gst_bill INTEGER DEFAULT 1,
   user_id INTEGER,
   user_name TEXT,
   created_at TEXT NOT NULL

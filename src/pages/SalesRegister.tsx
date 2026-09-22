@@ -233,8 +233,19 @@ export const SalesRegister: React.FC<SalesRegisterProps> = ({
               ) : (
                 sales.map((sale) => (
                   <tr key={sale.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="px-4 py-3 font-mono font-bold text-slate-900">
-                      {sale.invoice_no}
+                    <td className="px-4 py-3">
+                      <div className="font-mono font-bold text-slate-900">{sale.invoice_no}</div>
+                      <div className="mt-0.5">
+                        {sale.is_gst_bill === false || (sale.is_gst_bill === undefined && (sale.total_tax || 0) === 0) ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                            {isMr ? 'साधे बिल' : 'Non-GST'}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            GST
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-slate-600 font-mono">
                       {formatDate(sale.invoice_date)}

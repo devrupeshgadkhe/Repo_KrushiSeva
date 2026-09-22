@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Printer, X, Download, Share2, Check, FileText } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Printer, X, Download, Share2, Check, FileText, FileCheck, Receipt } from 'lucide-react';
 import { Sale, BusinessSettings, InvoiceSettings, AppLanguage } from '../../types';
 import { formatINR, formatDate, numberToWords } from '../../utils/formatters';
 
@@ -24,6 +25,24 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   const [copyType, setCopyType] = useState<'ORIGINAL' | 'DUPLICATE' | 'TRIPLICATE'>('ORIGINAL');
   const [copied, setCopied] = useState(false);
 
+  // Initialize GST mode based on sale record or tax amounts
+  const [isGstBill, setIsGstBill] = useState<boolean>(() => {
+    if (!sale) return true;
+    if (sale.is_gst_bill !== undefined && sale.is_gst_bill !== null) {
+      return Boolean(sale.is_gst_bill);
+    }
+    return ((sale.total_tax || 0) > 0 || (sale.cgst_amount || 0) + (sale.sgst_amount || 0) > 0);
+  });
+
+  useEffect(() => {
+    if (!sale) return;
+    if (sale.is_gst_bill !== undefined && sale.is_gst_bill !== null) {
+      setIsGstBill(Boolean(sale.is_gst_bill));
+    } else {
+      setIsGstBill(((sale.total_tax || 0) > 0 || (sale.cgst_amount || 0) + (sale.sgst_amount || 0) > 0));
+    }
+  }, [sale]);
+
   useEffect(() => {
     document.body.classList.add('invoice-modal-open');
     if (printFormat === 'Thermal') {
@@ -44,7 +63,8 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   const handlePrint = () => {
     const oldTitle = document.title;
     const cleanShop = (businessSettings.shop_name || 'Krushi-Seva').replace(/\s+/g, '-');
-    document.title = `${cleanShop}-Invoice-${sale.doc_no || sale.invoice_no}`;
+    const docType = isGstBill ? 'TaxInvoice' : 'BillOfSupply';
+    document.title = `${cleanShop}-${docType}-${sale.doc_no || sale.invoice_no}`;
     window.print();
     setTimeout(() => {
       document.title = oldTitle;
@@ -52,9 +72,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
   };
 
   const handleShareWhatsApp = () => {
+    const billTypeStr = isGstBill 
+      ? (isMr ? 'कर विक्री पावती' : 'Tax Invoice')
+      : (isMr ? 'साधे बिल / विक्री पावती' : 'Bill of Supply');
+
     const text = `*${isMr && businessSettings.shop_name_mr ? businessSettings.shop_name_mr : businessSettings.shop_name}*\n` +
-      `${isMr ? 'बिल क्र' : 'Invoice No'}: ${sale.invoice_no}\n` +
-      `${isMr ? 'दिनांक' : 'Date'}: ${formatDate(sale.invoice_date)}\n` +
+      `*${billTypeStr}*\n` +
+      `${isMr ? 'बिल क्र' : 'Invoice No'}: ${sale.doc_no || sale.invoice_no}\n` +
+      `${isMr ? 'दिनांक' : 'Date'}: ${formatDate(sale.doc_date || sale.invoice_date)}\n` +
       `${isMr ? 'ग्राहक' : 'Customer'}: ${sale.customer_name} (${sale.customer_village || ''})\n` +
       `${isMr ? 'एकूण रक्कम' : 'Total'}: ${formatINR(sale.grand_total)}\n` +
       `${isMr ? 'दिलेली रक्कम' : 'Paid'}: ${formatINR(sale.paid_amount)}\n` +
@@ -65,38 +90,71 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
     setTimeout(() => setCopied(false), 2500);
   };
 
-  // Group items by GST rate for HSN/Tax breakdown
+  // Group items by GST rate for HSN/Tax breakdown (GST mode only)
   const taxSummaryMap: Record<number, { taxable: number; cgst: number; sgst: number; totalTax: number }> = {};
-  sale.items?.forEach((item) => {
-    const rate = item.gst_rate || 0;
-    const taxable = item.taxable_amount || (item.total_amount - (item.cgst_amount + item.sgst_amount));
-    if (!taxSummaryMap[rate]) {
-      taxSummaryMap[rate] = { taxable: 0, cgst: 0, sgst: 0, totalTax: 0 };
-    }
-    taxSummaryMap[rate].taxable += taxable;
-    taxSummaryMap[rate].cgst += item.cgst_amount;
-    taxSummaryMap[rate].sgst += item.sgst_amount;
-    taxSummaryMap[rate].totalTax += (item.cgst_amount + item.sgst_amount);
-  });
+  if (isGstBill) {
+    sale.items?.forEach((item) => {
+      const rate = item.gst_rate || 0;
+      const taxable = item.taxable_amount || (item.total_amount - (item.cgst_amount + item.sgst_amount));
+      if (!taxSummaryMap[rate]) {
+        taxSummaryMap[rate] = { taxable: 0, cgst: 0, sgst: 0, totalTax: 0 };
+      }
+      taxSummaryMap[rate].taxable += taxable;
+      taxSummaryMap[rate].cgst += (item.cgst_amount || 0);
+      taxSummaryMap[rate].sgst += (item.sgst_amount || 0);
+      taxSummaryMap[rate].totalTax += ((item.cgst_amount || 0) + (item.sgst_amount || 0));
+    });
+  }
 
-  const prevBalance = sale.customer_prev_balance || 0;
+  const prevBalance = sale.customer_prev_balance || sale.previous_balance || 0;
   const totalAccountDue = prevBalance + sale.grand_total;
   const remainingAccountDue = prevBalance + sale.credit_amount;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[96vh] flex flex-col overflow-hidden">
-        {/* Header with Print Controls */}
+  return createPortal(
+    <div 
+      id="invoice-modal-portal" 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto"
+    >
+      <div className="modal-card bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[96vh] flex flex-col overflow-hidden">
+        {/* Header with Print Controls (Excluded from print) */}
         <div className="px-5 py-3.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 no-print shrink-0">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-emerald-400" />
             <h2 className="text-sm font-bold">
-              {isMr ? 'पावती प्रिंट पूर्वदृश्य' : 'Tax Invoice Print Preview'} — {sale.invoice_no}
+              {isGstBill 
+                ? (isMr ? 'कर पावती पूर्वदृश्य' : 'Tax Invoice Print Preview')
+                : (isMr ? 'साधे बिल पूर्वदृश्य' : 'Bill of Supply Print Preview')} — {sale.doc_no || sale.invoice_no}
             </h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Format Selector */}
+            {/* GST / Non-GST Bill Selector */}
+            <div className="flex bg-slate-800 p-0.5 rounded-lg text-xs border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setIsGstBill(true)}
+                className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                  isGstBill ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:text-white'
+                }`}
+                title={isMr ? 'जीएसटी कर बीजक' : 'GST Tax Invoice'}
+              >
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>{isMr ? 'GST बिल' : 'GST Bill'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsGstBill(false)}
+                className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                  !isGstBill ? 'bg-amber-600 text-white' : 'text-slate-300 hover:text-white'
+                }`}
+                title={isMr ? 'साधे बिल / Non-GST विक्री पावती' : 'Non-GST / Bill of Supply'}
+              >
+                <Receipt className="w-3.5 h-3.5" />
+                <span>{isMr ? 'Non-GST बिल' : 'Non-GST Bill'}</span>
+              </button>
+            </div>
+
+            {/* Print Format Selector */}
             <div className="flex bg-slate-800 p-0.5 rounded-lg text-xs border border-slate-700">
               <button
                 type="button"
@@ -190,7 +248,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
         </div>
 
         {/* Printable Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100 flex justify-center">
+        <div className="modal-scroll-area flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100 flex justify-center">
           {printFormat === 'A4' ? (
             /* =================== A4 STATUTORY INVOICE (DOCUMENT 1 COMPLIANT) =================== */
             <div 
@@ -253,10 +311,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     </p>
                   </div>
 
-                  {/* Right: Owner, Mobile, GSTIN */}
+                  {/* Right: Owner, Mobile, GSTIN (GSTIN shown only in GST mode) */}
                   <div className="col-span-3 text-right text-[10px] space-y-0.5 border-l border-slate-300 pl-2">
                     <div className="font-semibold text-slate-500 uppercase text-[9px] mb-1">
-                      {isMr ? 'संपर्क व कर' : 'Dealer Info'}
+                      {isMr ? 'संपर्क माहिती' : 'Dealer Info'}
                     </div>
                     <div className="font-bold text-slate-900 truncate">
                       {businessSettings.proprietor || businessSettings.owner_name}
@@ -270,16 +328,24 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                     {businessSettings.mobile_secondary && (
                       <div><span className="font-bold">Mob 2:</span> {businessSettings.mobile_secondary}</div>
                     )}
-                    <div className="font-mono font-bold text-emerald-900 text-[10.5px] mt-1 pt-0.5 border-t border-slate-200">
-                      GST: {businessSettings.gstin}
-                    </div>
+                    {isGstBill && businessSettings.gstin && (
+                      <div className="font-mono font-bold text-emerald-900 text-[10.5px] mt-1 pt-0.5 border-t border-slate-200">
+                        GST: {businessSettings.gstin}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* 3. Tax Invoice Banner */}
-                <div className="bg-emerald-950 text-white text-center py-1 font-black text-xs tracking-widest uppercase mb-2 rounded-2xs flex justify-between px-4 items-center">
+                {/* 3. Invoice Title Banner (Tax Invoice vs Bill of Supply) */}
+                <div className={`text-white text-center py-1 font-black text-xs tracking-widest uppercase mb-2 rounded-2xs flex justify-between px-4 items-center ${
+                  isGstBill ? 'bg-emerald-950' : 'bg-slate-900'
+                }`}>
                   <span>॥ श्री स्वामी समर्थ ॥</span>
-                  <span>{isMr ? 'कर विक्री पावती / TAX INVOICE' : 'TAX INVOICE'}</span>
+                  <span>
+                    {isGstBill 
+                      ? (isMr ? 'कर विक्री पावती / TAX INVOICE' : 'TAX INVOICE') 
+                      : (isMr ? 'विक्री पावती / साधे बिल (BILL OF SUPPLY)' : 'BILL OF SUPPLY / CASH MEMO')}
+                  </span>
                   <span>{sale.payment_mode === 'Credit' ? (isMr ? 'उधारी पावती' : 'CREDIT') : (isMr ? 'रोख पावती' : 'CASH')}</span>
                 </div>
 
@@ -328,7 +394,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                   </div>
                 </div>
 
-                {/* 5. Itemized Table (with Mfg, Batch, Exp, Qty, Rate, Taxable, GST) */}
+                {/* 5. Itemized Table (GST Columns shown ONLY in GST Mode) */}
                 <table className="w-full border-collapse border border-slate-400 text-[10px] mb-2">
                   <thead>
                     <tr className="bg-slate-100 text-slate-900 border-b border-slate-400 font-bold">
@@ -339,9 +405,15 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                       <th className="border border-slate-400 px-1 py-1 text-center w-16">{isMr ? 'बॅच क्र.' : 'Batch No'}</th>
                       <th className="border border-slate-400 px-1 py-1 text-center w-14">{isMr ? 'मुदत' : 'Expiry'}</th>
                       <th className="border border-slate-400 px-1 py-1 text-center w-12">{isMr ? 'नग' : 'Qty'}</th>
-                      <th className="border border-slate-400 px-1 py-1 text-right w-14">{isMr ? 'दर (₹)' : 'Rate'}</th>
-                      <th className="border border-slate-400 px-1 py-1 text-right w-16">{isMr ? 'करपात्र (₹)' : 'Taxable'}</th>
-                      <th className="border border-slate-400 px-1 py-1 text-center w-10">GST%</th>
+                      <th className="border border-slate-400 px-1 py-1 text-right w-16">{isMr ? 'दर (₹)' : 'Rate'}</th>
+                      {isGstBill ? (
+                        <>
+                          <th className="border border-slate-400 px-1 py-1 text-right w-16">{isMr ? 'करपात्र (₹)' : 'Taxable'}</th>
+                          <th className="border border-slate-400 px-1 py-1 text-center w-10">GST%</th>
+                        </>
+                      ) : (
+                        <th className="border border-slate-400 px-1 py-1 text-right w-14">{isMr ? 'सूट (%)' : 'Disc'}</th>
+                      )}
                       <th className="border border-slate-400 px-1.5 py-1 text-right w-20">{isMr ? 'एकूण रक्कम' : 'Total (₹)'}</th>
                     </tr>
                   </thead>
@@ -377,12 +449,20 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                         <td className="border border-slate-400 px-1 py-1 text-right font-mono">
                           {item.rate.toFixed(2)}
                         </td>
-                        <td className="border border-slate-400 px-1 py-1 text-right font-mono">
-                          {(item.taxable_amount || (item.total_amount - (item.cgst_amount + item.sgst_amount))).toFixed(2)}
-                        </td>
-                        <td className="border border-slate-400 px-1 py-1 text-center font-mono text-[9.5px]">
-                          {item.gst_rate}%
-                        </td>
+                        {isGstBill ? (
+                          <>
+                            <td className="border border-slate-400 px-1 py-1 text-right font-mono">
+                              {(item.taxable_amount || (item.total_amount - ((item.cgst_amount || 0) + (item.sgst_amount || 0)))).toFixed(2)}
+                            </td>
+                            <td className="border border-slate-400 px-1 py-1 text-center font-mono text-[9.5px]">
+                              {item.gst_rate}%
+                            </td>
+                          </>
+                        ) : (
+                          <td className="border border-slate-400 px-1 py-1 text-right font-mono text-slate-600">
+                            {item.discount_percent ? `${item.discount_percent}%` : '-'}
+                          </td>
+                        )}
                         <td className="border border-slate-400 px-1.5 py-1 text-right font-mono font-bold text-slate-900">
                           {item.total_amount.toFixed(2)}
                         </td>
@@ -397,60 +477,96 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                       <td className="border border-slate-400 px-1 py-1 text-center font-mono font-bold">
                         {sale.items?.reduce((s, it) => s + it.quantity, 0)}
                       </td>
-                      <td colSpan={3} className="border border-slate-400 px-2 py-1 text-right uppercase">
-                        {isMr ? 'करपात्र एकूण:' : 'Taxable Total:'}
-                      </td>
-                      <td className="border border-slate-400 px-1.5 py-1 text-right font-mono text-slate-900">
-                        {formatINR(sale.taxable_amount)}
-                      </td>
+                      {isGstBill ? (
+                        <>
+                          <td colSpan={3} className="border border-slate-400 px-2 py-1 text-right uppercase">
+                            {isMr ? 'करपात्र एकूण:' : 'Taxable Total:'}
+                          </td>
+                          <td className="border border-slate-400 px-1.5 py-1 text-right font-mono text-slate-900">
+                            {formatINR(sale.taxable_amount)}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td colSpan={2} className="border border-slate-400 px-2 py-1 text-right uppercase">
+                            {isMr ? 'निव्वळ एकूण रक्कम:' : 'Net Total:'}
+                          </td>
+                          <td className="border border-slate-400 px-1.5 py-1 text-right font-mono text-slate-900">
+                            {formatINR(sale.grand_total)}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   </tfoot>
                 </table>
 
-                {/* 6. Tax Summary & Financial Breakdown */}
+                {/* 6. Tax Summary (GST mode) OR Bill Details (Non-GST mode) + Complete Financial Breakdown */}
                 <div className="grid grid-cols-12 gap-2 text-[10px] mb-2">
-                  {/* Left: GST Tax Split Table */}
-                  <div className="col-span-6 border border-slate-400 p-2 rounded-xs bg-slate-50/40">
-                    <div className="font-bold text-slate-800 mb-1 uppercase text-[9px] border-b border-slate-300 pb-0.5">
-                      {isMr ? 'जीएसटी कर विभाजन विवरण (GST Tax Summary)' : 'GST Tax Summary'}
-                    </div>
-                    <table className="w-full text-center border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-300 font-semibold text-slate-600">
-                          <th className="py-0.5 text-left">GST%</th>
-                          <th className="py-0.5 text-right">{isMr ? 'करपात्र' : 'Taxable'}</th>
-                          <th className="py-0.5 text-right">CGST</th>
-                          <th className="py-0.5 text-right">SGST</th>
-                          <th className="py-0.5 text-right">{isMr ? 'एकूण कर' : 'Total Tax'}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200 font-mono text-[9.5px]">
-                        {Object.entries(taxSummaryMap).map(([rate, v]) => (
-                          <tr key={rate}>
-                            <td className="py-0.5 text-left font-bold">{rate}%</td>
-                            <td className="py-0.5 text-right">{v.taxable.toFixed(2)}</td>
-                            <td className="py-0.5 text-right">{v.cgst.toFixed(2)}</td>
-                            <td className="py-0.5 text-right">{v.sgst.toFixed(2)}</td>
-                            <td className="py-0.5 text-right font-bold">{v.totalTax.toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-
-                    {/* Amount in words */}
-                    <div className="mt-2 pt-1 border-t border-slate-300 text-[10px]">
-                      <span className="font-bold text-slate-800">{isMr ? 'अक्षरी रक्कम: ' : 'Amount in Words: '}</span>
-                      <span className="font-medium text-emerald-950 italic">{numberToWords(sale.grand_total)}</span>
-                    </div>
-
-                    {/* Bank Details */}
-                    {businessSettings.bank_account_no && (
-                      <div className="mt-1.5 p-1.5 rounded bg-emerald-50 border border-emerald-200 text-[9.5px] text-slate-800">
-                        <span className="font-bold text-emerald-950">{isMr ? 'बँक माहिती: ' : 'Bank: '}</span>
-                        {businessSettings.bank_name}, A/C: {businessSettings.bank_account_no}, IFSC: {businessSettings.bank_ifsc}
-                        {businessSettings.upi_id ? ` • UPI: ${businessSettings.upi_id}` : ''}
+                  {/* Left Column */}
+                  <div className="col-span-6 border border-slate-400 p-2 rounded-xs bg-slate-50/40 flex flex-col justify-between">
+                    {isGstBill ? (
+                      /* GST Tax Split Table */
+                      <div>
+                        <div className="font-bold text-slate-800 mb-1 uppercase text-[9px] border-b border-slate-300 pb-0.5">
+                          {isMr ? 'जीएसटी कर विभाजन विवरण (GST Tax Summary)' : 'GST Tax Summary'}
+                        </div>
+                        <table className="w-full text-center border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-300 font-semibold text-slate-600">
+                              <th className="py-0.5 text-left">GST%</th>
+                              <th className="py-0.5 text-right">{isMr ? 'करपात्र' : 'Taxable'}</th>
+                              <th className="py-0.5 text-right">CGST</th>
+                              <th className="py-0.5 text-right">SGST</th>
+                              <th className="py-0.5 text-right">{isMr ? 'एकूण कर' : 'Total Tax'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 font-mono text-[9.5px]">
+                            {Object.entries(taxSummaryMap).map(([rate, v]) => (
+                              <tr key={rate}>
+                                <td className="py-0.5 text-left font-bold">{rate}%</td>
+                                <td className="py-0.5 text-right">{v.taxable.toFixed(2)}</td>
+                                <td className="py-0.5 text-right">{v.cgst.toFixed(2)}</td>
+                                <td className="py-0.5 text-right">{v.sgst.toFixed(2)}</td>
+                                <td className="py-0.5 text-right font-bold">{v.totalTax.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      /* Non-GST Retail Supply Info Box */
+                      <div>
+                        <div className="font-bold text-slate-800 mb-1.5 uppercase text-[9px] border-b border-slate-300 pb-0.5 flex items-center justify-between">
+                          <span>{isMr ? 'साधे बिल तपशील (Bill of Supply Memo)' : 'Bill of Supply Details'}</span>
+                          <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded font-semibold text-[8.5px]">
+                            {isMr ? 'विना-कर बीजक' : 'Non-GST Supply'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-700 leading-snug">
+                          {isMr 
+                            ? 'हे बिल करपात्र नसून किरकोळ विक्री पावती (Bill of Supply) स्वरूपात जारी करण्यात आले आहे.' 
+                            : 'This is a retail cash memo / bill of supply for agricultural inputs issued without tax.'}
+                        </p>
                       </div>
                     )}
+
+                    {/* Amount in words & Bank Details */}
+                    <div>
+                      {/* Amount in words */}
+                      <div className="mt-2 pt-1 border-t border-slate-300 text-[10px]">
+                        <span className="font-bold text-slate-800">{isMr ? 'अक्षरी रक्कम: ' : 'Amount in Words: '}</span>
+                        <span className="font-medium text-emerald-950 italic">{numberToWords(sale.grand_total)}</span>
+                      </div>
+
+                      {/* Bank Details */}
+                      {businessSettings.bank_account_no && (
+                        <div className="mt-1.5 p-1.5 rounded bg-emerald-50 border border-emerald-200 text-[9.5px] text-slate-800">
+                          <span className="font-bold text-emerald-950">{isMr ? 'बँक माहिती: ' : 'Bank: '}</span>
+                          {businessSettings.bank_name}, A/C: {businessSettings.bank_account_no}, IFSC: {businessSettings.bank_ifsc}
+                          {businessSettings.upi_id ? ` • UPI: ${businessSettings.upi_id}` : ''}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Right: Complete Account Balance Ledger */}
@@ -547,11 +663,16 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                 <div className="text-[10px]">{businessSettings.address}</div>
                 <div className="text-[10px]">{businessSettings.village_city}, {businessSettings.district}</div>
                 <div className="text-[10px]">{isMr ? 'मोबाईल' : 'Mobile'}: {businessSettings.mobile}</div>
-                <div className="text-[9px] mt-1 font-bold">GSTIN: {businessSettings.gstin || '-'}</div>
+                {isGstBill && businessSettings.gstin && (
+                  <div className="text-[9px] mt-1 font-bold">GSTIN: {businessSettings.gstin}</div>
+                )}
+                <div className="text-[10px] font-bold mt-1 uppercase border border-black/30 px-2 py-0.5 rounded">
+                  {isGstBill ? (isMr ? 'कर विक्री पावती' : 'TAX INVOICE') : (isMr ? 'साधे बिल' : 'BILL OF SUPPLY')}
+                </div>
               </div>
 
               <div className="border-b border-dashed border-black pb-2 mb-2 text-[10px]">
-                <div>{isMr ? 'बिल क्र' : 'Doc No'}: {sale.doc_no || sale.invoice_no}</div>
+                <div>{isMr ? 'पावती क्र' : 'Doc No'}: {sale.doc_no || sale.invoice_no}</div>
                 <div>{isMr ? 'दिनांक' : 'Date'}: {formatDate(sale.doc_date || sale.invoice_date)}</div>
                 <div>{isMr ? 'ग्राहक' : 'Customer'}: {sale.customer_name} ({sale.customer_village || ''})</div>
                 <div>{isMr ? 'पेमेंट' : 'Payment'}: {sale.payment_mode}</div>
@@ -582,6 +703,12 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                   <span>{isMr ? 'उपएकूण:' : 'Subtotal:'}</span>
                   <span>{formatINR(sale.subtotal)}</span>
                 </div>
+                {isGstBill && (sale.total_tax || 0) > 0 && (
+                  <div className="flex justify-between text-slate-700">
+                    <span>{isMr ? 'जीएसटी कर:' : 'Total GST:'}</span>
+                    <span>{formatINR(sale.total_tax)}</span>
+                  </div>
+                )}
                 {prevBalance > 0 && (
                   <div className="flex justify-between text-slate-700">
                     <span>{isMr ? 'मागील बाकी:' : 'Prev Due:'}</span>
@@ -612,6 +739,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

@@ -436,19 +436,21 @@ export const dbService = {
       const docDate = sale.doc_date || sale.invoice_date;
       const outstandingBal = prevBal + creditAmount;
 
+      const isGstVal = sale.is_gst_bill !== undefined ? (sale.is_gst_bill ? 1 : 0) : ((totalTax > 0 || cgstAmount + sgstAmount > 0) ? 1 : 0);
+
       const saleRes = sqliteEngine.run(
         `INSERT INTO sales (
           invoice_no, invoice_date, doc_no, doc_date, customer_id, customer_name, customer_mobile, customer_village, 
           customer_aadhar, customer_outstanding, previous_balance, payment_mode, subtotal, discount_amount, taxable_amount, 
           cgst_amount, sgst_amount, igst_amount, total_tax, round_off, grand_total, paid_amount, credit_amount, status, 
-          notes, user_id, user_name, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Completed', ?, ?, ?, datetime('now'))`,
+          notes, is_gst_bill, user_id, user_name, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Completed', ?, ?, ?, ?, datetime('now'))`,
         [
           invoiceNo, sale.invoice_date, docNo, docDate, customerId, sale.customer_name || 'Walk-in',
           sale.customer_mobile || '', sale.customer_village || '', custAadhar, outstandingBal, prevBal,
           sale.payment_mode, subtotal, discountAmount, taxableAmount, cgstAmount, sgstAmount,
           igstAmount, totalTax, roundOff, grandTotal, paidAmount,
-          creditAmount, sale.notes || '', sale.user_id || 1, userName
+          creditAmount, sale.notes || '', isGstVal, sale.user_id || 1, userName
         ]
       );
       const saleId = saleRes.lastInsertRowid;
@@ -568,7 +570,13 @@ export const dbService = {
     sql += ' ORDER BY id DESC LIMIT ?';
     params.push(limit);
 
-    return sqliteEngine.query<Sale>(sql, params);
+    const rows = sqliteEngine.query<Sale>(sql, params);
+    return rows.map((s) => ({
+      ...s,
+      is_gst_bill: s.is_gst_bill !== undefined && s.is_gst_bill !== null
+        ? Boolean(s.is_gst_bill)
+        : ((s.total_tax || 0) > 0 || (s.cgst_amount || 0) + (s.sgst_amount || 0) > 0),
+    }));
   },
 
   async getSaleById(id: number): Promise<Sale | null> {
@@ -601,9 +609,14 @@ export const dbService = {
       }
     }
 
+    const isGst = sale.is_gst_bill !== undefined && sale.is_gst_bill !== null
+      ? Boolean(sale.is_gst_bill)
+      : ((sale.total_tax || 0) > 0 || (sale.cgst_amount || 0) + (sale.sgst_amount || 0) > 0);
+
     return { 
       ...sale, 
       items, 
+      is_gst_bill: isGst,
       customer_outstanding: outstanding || 0,
       doc_no: sale.doc_no || String(1000 + sale.id),
       doc_date: sale.doc_date || sale.invoice_date,
@@ -760,19 +773,21 @@ export const dbService = {
       }
       const outstandingBal = prevBal + creditAmount;
 
+      const isGstVal = sale.is_gst_bill !== undefined ? (sale.is_gst_bill ? 1 : 0) : ((totalTax > 0 || cgstAmount + sgstAmount > 0) ? 1 : 0);
+
       sqliteEngine.run(
         `UPDATE sales SET
           invoice_date = ?, doc_date = ?, customer_id = ?, customer_name = ?, customer_mobile = ?, customer_village = ?,
           customer_aadhar = ?, customer_outstanding = ?, previous_balance = ?, payment_mode = ?, subtotal = ?, 
           discount_amount = ?, taxable_amount = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, total_tax = ?, 
-          round_off = ?, grand_total = ?, paid_amount = ?, credit_amount = ?, status = 'Completed', notes = ?, user_name = ?
+          round_off = ?, grand_total = ?, paid_amount = ?, credit_amount = ?, status = 'Completed', notes = ?, is_gst_bill = ?, user_name = ?
         WHERE id = ?`,
         [
           sale.invoice_date, sale.doc_date || sale.invoice_date, customerId, sale.customer_name || 'Walk-in',
           sale.customer_mobile || '', sale.customer_village || '', custAadhar, outstandingBal, prevBal,
           sale.payment_mode, subtotal, discountAmount, taxableAmount, cgstAmount, sgstAmount,
           igstAmount, totalTax, roundOff, grandTotal, paidAmount,
-          creditAmount, sale.notes || '', userName, id
+          creditAmount, sale.notes || '', isGstVal, userName, id
         ]
       );
 

@@ -72,50 +72,78 @@
     display: block !important;
   }
 
-  /* Modal Backdrop Clean-Up: neutralize any modal shadow, background overlays, blur */
-  .fixed.inset-0,
-  div[class*="backdrop-blur"],
-  div[class*="bg-black"],
-  div[class*="bg-slate-900/"],
-  .invoice-modal-overlay {
+  /* When invoice modal is open, completely remove root application DOM from print */
+  body.invoice-modal-open > #root {
+    display: none !important;
+  }
+
+  /* Invoice Modal Portal Print Flow */
+  #invoice-modal-portal {
     position: static !important;
     inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
     background: transparent !important;
     background-color: transparent !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    overflow: visible !important;
   }
 
-  /* Invoice Modal Print Isolation */
-  body.invoice-modal-open {
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-  }
-
-  body.invoice-modal-open * {
-    visibility: hidden !important;
-  }
-
-  body.invoice-modal-open #invoice-print-container,
-  body.invoice-modal-open #invoice-print-container * {
-    visibility: visible !important;
-  }
-
-  body.invoice-modal-open #invoice-print-container {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+  #invoice-modal-portal .modal-card,
+  #invoice-modal-portal .modal-scroll-area {
+    position: static !important;
+    display: block !important;
     width: 100% !important;
     max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    padding: 0 !important;
     margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Invoice Print Container: cleanly positioned at top with full page flow */
+  #invoice-print-container {
+    position: static !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+    height: auto !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     background: #ffffff !important;
     background-color: #ffffff !important;
     box-shadow: none !important;
     border: none !important;
+    overflow: visible !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Fallback in case modal is printed without portal */
+  body.invoice-modal-open .fixed.inset-0 {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   /* Thermal Print Specifics */

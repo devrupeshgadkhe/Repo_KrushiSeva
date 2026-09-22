@@ -16,7 +16,9 @@ import {
   Calendar,
   RotateCcw,
   CheckCircle2,
-  Edit3
+  Edit3,
+  FileCheck,
+  Receipt
 } from 'lucide-react';
 import { 
   AppLanguage, 
@@ -65,6 +67,35 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isQuickAddCustomerOpen, setIsQuickAddCustomerOpen] = useState(false);
+
+  // GST vs Non-GST Billing Mode (Persisted in localStorage)
+  const [isGstBill, setIsGstBill] = useState<boolean>(() => {
+    const saved = localStorage.getItem('pos_billing_is_gst');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const toggleGstBillingMode = (newMode: boolean) => {
+    setIsGstBill(newMode);
+    localStorage.setItem('pos_billing_is_gst', String(newMode));
+    // Recalculate all cart items with updated tax mode
+    setItems((prevItems) => {
+      return prevItems.map((item) => {
+        const prod = products.find((p) => p.id === item.product_id);
+        const effectiveGstRate = newMode ? (prod?.gst_rate || item.gst_rate || 0) : 0;
+        const calc = calculateLineGst(
+          item.quantity,
+          item.rate,
+          item.discount_percent,
+          effectiveGstRate
+        );
+        return {
+          ...item,
+          gst_rate: effectiveGstRate,
+          ...calc,
+        };
+      });
+    });
+  };
 
   // Walk-in customer custom inputs
   const [isWalkIn, setIsWalkIn] = useState(true);
@@ -144,6 +175,12 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
         setPaymentMode(sale.payment_mode);
         setPaidAmount(sale.paid_amount);
         setNotes(sale.notes || '');
+
+        if (sale.is_gst_bill !== undefined && sale.is_gst_bill !== null) {
+          setIsGstBill(Boolean(sale.is_gst_bill));
+        } else {
+          setIsGstBill(((sale.total_tax || 0) > 0 || (sale.cgst_amount || 0) + (sale.sgst_amount || 0) > 0));
+        }
 
         if (sale.customer_id && sale.customer_id > 0) {
           const cust = customers.find((c) => c.id === sale.customer_id);
@@ -343,6 +380,8 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
       (it) => it.product_id === product.id && it.batch_id === batch.id
     );
 
+    const effectiveGstRate = isGstBill ? (product.gst_rate || 0) : 0;
+
     if (existingIndex > -1) {
       // Increase qty
       const existing = items[existingIndex];
@@ -351,13 +390,14 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
         newQty,
         existing.rate,
         existing.discount_percent,
-        existing.gst_rate
+        effectiveGstRate
       );
 
       const updated = [...items];
       updated[existingIndex] = {
         ...existing,
         quantity: newQty,
+        gst_rate: effectiveGstRate,
         ...calc,
       };
       setItems(updated);
@@ -365,7 +405,7 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
       // New line item
       const rate = batch.selling_rate || product.selling_rate;
       const discountPercent = 0;
-      const calc = calculateLineGst(quantity, rate, discountPercent, product.gst_rate);
+      const calc = calculateLineGst(quantity, rate, discountPercent, effectiveGstRate);
 
       const newItem: SaleItem = {
         product_id: product.id,
@@ -385,6 +425,7 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
         mrp: batch.mrp || product.mrp,
         discount_percent: discountPercent,
         ...calc,
+        gst_rate: effectiveGstRate,
       };
 
       setItems([...items, newItem]);
@@ -411,16 +452,18 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
       target.discount_percent = Math.min(100, Math.max(0, value));
     }
 
+    const effectiveGstRate = isGstBill ? (target.gst_rate || 0) : 0;
     const calc = calculateLineGst(
       target.quantity,
       target.rate,
       target.discount_percent,
-      target.gst_rate
+      effectiveGstRate
     );
 
     newItems[index] = {
       ...target,
       ...calc,
+      gst_rate: effectiveGstRate,
     };
     setItems(newItems);
   };
@@ -440,11 +483,13 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
   // Calculations
   const subtotal = items.reduce((acc, item) => acc + item.lineTotal, 0);
   const totalDiscount = items.reduce((acc, item) => acc + item.discountAmount, 0);
-  const taxableAmount = items.reduce((acc, item) => acc + item.taxableValue, 0);
-  const totalTax = items.reduce((acc, item) => acc + item.totalTax, 0);
-  const cgstAmount = totalTax / 2;
-  const sgstAmount = totalTax / 2;
-  const rawGrandTotal = taxableAmount + totalTax;
+  const taxableAmount = isGstBill 
+    ? items.reduce((acc, item) => acc + item.taxableValue, 0) 
+    : (subtotal - totalDiscount);
+  const totalTax = isGstBill ? items.reduce((acc, item) => acc + item.totalTax, 0) : 0;
+  const cgstAmount = isGstBill ? totalTax / 2 : 0;
+  const sgstAmount = isGstBill ? totalTax / 2 : 0;
+  const rawGrandTotal = isGstBill ? (taxableAmount + totalTax) : (subtotal - totalDiscount);
   const grandTotal = Math.round(rawGrandTotal);
   const roundOff = Math.round((grandTotal - rawGrandTotal) * 100) / 100;
 
@@ -499,6 +544,7 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
       }
 
       const salePayload = {
+        is_gst_bill: isGstBill,
         invoice_no: editingInvoiceNo || '',
         invoice_date: invoiceDate,
         doc_date: invoiceDate,
@@ -850,8 +896,38 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
           </button>
         </div>
 
-        {/* Right Status / Held bills Toolbar */}
+        {/* Right Status / Held bills & GST Switcher Toolbar */}
         <div className="flex items-center gap-2">
+          {/* GST / Non-GST Mode Switcher */}
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-300 text-xs shadow-2xs">
+            <button
+              type="button"
+              onClick={() => toggleGstBillingMode(true)}
+              className={`px-2.5 py-1 rounded-md font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                isGstBill
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title={isMr ? 'जीएसटी कर बीजक मोड (GST Tax Invoice)' : 'GST Tax Invoice Mode'}
+            >
+              <FileCheck className="w-3.5 h-3.5" />
+              <span>{isMr ? 'GST बिल' : 'GST Bill'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleGstBillingMode(false)}
+              className={`px-2.5 py-1 rounded-md font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                !isGstBill
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title={isMr ? 'साधे बिल / Non-GST पावती मोड (Bill of Supply)' : 'Non-GST / Bill of Supply Mode'}
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span>{isMr ? 'Non-GST बिल' : 'Non-GST Bill'}</span>
+            </button>
+          </div>
+
           {heldBills.length > 0 && (
             <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-xs text-amber-800">
               <PauseCircle className="w-3.5 h-3.5 text-amber-600" />
@@ -965,7 +1041,7 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
                   <th className="px-3 py-2 text-center w-32">{getTranslation('qty', currentLang)}</th>
                   <th className="px-3 py-2 text-right w-24">{getTranslation('rate', currentLang)}</th>
                   <th className="px-3 py-2 text-right w-16">{getTranslation('discount', currentLang)}</th>
-                  <th className="px-3 py-2 text-right w-14">GST</th>
+                  {isGstBill && <th className="px-3 py-2 text-right w-14">GST</th>}
                   <th className="px-3 py-2 text-right w-24">{getTranslation('amount', currentLang)}</th>
                   <th className="px-3 py-2 text-center w-10"></th>
                 </tr>
@@ -973,7 +1049,7 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-24 text-center text-slate-400">
+                    <td colSpan={isGstBill ? 9 : 8} className="py-24 text-center text-slate-400">
                       <Barcode className="w-12 h-12 mx-auto mb-2 text-slate-300" />
                       <div className="text-sm font-semibold text-slate-600">
                         {isMr ? 'पावतीमध्ये वस्तूंची नोंद नाही' : 'Bill is empty'}
@@ -1050,9 +1126,11 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
                           className="w-12 px-1 py-1 text-right font-mono bg-slate-50 border border-slate-300 rounded focus:bg-white focus:outline-emerald-600 text-xs"
                         />
                       </td>
-                      <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-500">
-                        {item.gst_rate}%
-                      </td>
+                      {isGstBill && (
+                        <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-500">
+                          {item.gst_rate}%
+                        </td>
+                      )}
                       <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">
                         {formatINR(item.total_amount)}
                       </td>
@@ -1081,8 +1159,16 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
               {isMr ? ' एकूण नग' : ' Total Qty'}: <strong className="text-slate-800">{items.reduce((a, b) => a + b.quantity, 0)}</strong>
             </div>
             <div className="flex items-center gap-4">
-              <span>{isMr ? 'करपात्र मूल्य' : 'Taxable Value'}: <strong className="font-mono text-slate-800">{formatINR(taxableAmount)}</strong></span>
-              <span>{isMr ? 'एकूण जीएसटी' : 'Total GST'}: <strong className="font-mono text-slate-800">{formatINR(totalTax)}</strong></span>
+              {isGstBill ? (
+                <>
+                  <span>{isMr ? 'करपात्र मूल्य' : 'Taxable Value'}: <strong className="font-mono text-slate-800">{formatINR(taxableAmount)}</strong></span>
+                  <span>{isMr ? 'एकूण जीएसटी' : 'Total GST'}: <strong className="font-mono text-slate-800">{formatINR(totalTax)}</strong></span>
+                </>
+              ) : (
+                <span className="bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded text-[11px] border border-amber-300">
+                  {isMr ? 'विना-जीएसटी साधे बिल (Bill of Supply)' : 'Non-GST Bill of Supply'}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1091,14 +1177,27 @@ export const SalesPOS: React.FC<SalesPOSProps> = ({
         <div className="lg:col-span-4 bg-slate-50 p-4 flex flex-col justify-between overflow-y-auto border-l border-slate-200">
           <div className="space-y-3.5">
             {/* Grand Total Display Card */}
-            <div className="bg-emerald-950 text-white p-4 rounded-xl shadow-xs border border-emerald-900">
-              <div className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">
-                {getTranslation('grand_total', currentLang)}
+            <div className={`p-4 rounded-xl shadow-xs border ${
+              isGstBill 
+                ? 'bg-emerald-950 text-white border-emerald-900' 
+                : 'bg-slate-900 text-white border-slate-800'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className={`text-[11px] font-semibold uppercase tracking-wider ${
+                  isGstBill ? 'text-emerald-300' : 'text-amber-400'
+                }`}>
+                  {getTranslation('grand_total', currentLang)}
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                  isGstBill ? 'bg-emerald-800 text-emerald-200' : 'bg-amber-700 text-amber-100'
+                }`}>
+                  {isGstBill ? (isMr ? 'GST कर बिल' : 'GST Invoice') : (isMr ? 'साधे बिल' : 'Bill of Supply')}
+                </span>
               </div>
               <div className="text-3xl font-black font-mono tracking-tight text-white mt-1">
                 {formatINR(grandTotal)}
               </div>
-              <div className="text-[10px] text-emerald-300/70 mt-1 flex justify-between">
+              <div className="text-[10px] text-slate-300 mt-1 flex justify-between">
                 <span>{isMr ? 'उपएकूण' : 'Subtotal'}: {formatINR(subtotal)}</span>
                 {totalDiscount > 0 && <span>{isMr ? 'सूट' : 'Discount'}: -{formatINR(totalDiscount)}</span>}
                 {roundOff !== 0 && <span>{isMr ? 'राउंड ऑफ' : 'Round off'}: {roundOff}</span>}
