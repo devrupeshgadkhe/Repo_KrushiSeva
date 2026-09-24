@@ -25,6 +25,7 @@ import { Suppliers } from './pages/Suppliers';
 import { ExpensesCash } from './pages/ExpensesCash';
 import { Compliance } from './pages/Compliance';
 import { Reports } from './pages/Reports';
+import { BulkDataExchange } from './pages/BulkDataExchange';
 import { BackupHealth } from './pages/BackupHealth';
 import { Settings } from './pages/Settings';
 import { BusinessProfile } from './pages/BusinessProfile';
@@ -77,6 +78,24 @@ export default function App() {
     } catch (e) {
       console.warn('Failed to refresh global metrics', e);
     }
+  }, []);
+
+  // System Shutdown / Exit Backup Hook
+  useEffect(() => {
+    const handleShutdownBackup = () => {
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/backup/shutdown');
+        } else {
+          fetch('/api/backup/shutdown', { method: 'POST', keepalive: true }).catch(() => {});
+        }
+      } catch {}
+    };
+
+    window.addEventListener('beforeunload', handleShutdownBackup);
+    return () => {
+      window.removeEventListener('beforeunload', handleShutdownBackup);
+    };
   }, []);
 
   // Initialize SQLite database on boot
@@ -337,6 +356,13 @@ export default function App() {
           {activeTab === 'reports' && (
             <Reports
               currentLang={currentLang}
+            />
+          )}
+
+          {activeTab === 'bulk_data' && (
+            <BulkDataExchange
+              currentLang={currentLang}
+              onRefreshData={refreshGlobalMetrics}
             />
           )}
 

@@ -16,7 +16,10 @@ import {
   ExternalLink,
   Activity,
   Lock,
-  Clock
+  Clock,
+  AlertTriangle,
+  Trash2,
+  X
 } from 'lucide-react';
 import { AppLanguage, BusinessSettings, InvoiceSettings, User } from '../types';
 import { getTranslation } from '../i18n';
@@ -33,9 +36,18 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
   const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
 
-  const [activeTab, setActiveTab] = useState<'shop' | 'invoice' | 'users' | 'audit' | 'updates'>('shop');
+  const [activeTab, setActiveTab] = useState<'shop' | 'invoice' | 'users' | 'audit' | 'updates' | 'danger'>('shop');
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Hard Reset Modal State
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [wipeProducts, setWipeProducts] = useState(true);
+  const [wipeCustomers, setWipeCustomers] = useState(false);
+  const [wipeSuppliers, setWipeSuppliers] = useState(false);
+  const [confirmedCheck, setConfirmedCheck] = useState(false);
+  const [confirmInput, setConfirmInput] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   // Desktop App & Update State
   const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
@@ -222,6 +234,40 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
     }
   };
 
+  const handleExecuteHardReset = async () => {
+    if (!confirmedCheck || confirmInput.trim().toUpperCase() !== 'RESET') {
+      showToast(isMr ? 'कृपया तपासणी बॉक्स निवडा आणि "RESET" टाईप करा.' : 'Please check the box and type "RESET" to confirm.', 'error');
+      return;
+    }
+
+    setResetting(true);
+    try {
+      await dbService.hardResetDatabase({
+        wipeProducts,
+        wipeCustomers,
+        wipeSuppliers,
+      });
+      showToast(
+        isMr 
+          ? 'हार्ड रीसेट यशस्वीरित्या पूर्ण झाले. निवडलेला डेटा नष्ट करण्यात आला आहे.' 
+          : 'Hard reset completed successfully. Selected data has been wiped.', 
+        'success'
+      );
+      setShowResetModal(false);
+      setConfirmInput('');
+      setConfirmedCheck(false);
+      onSettingsSaved?.();
+      // Reload page to refresh all active queries and in-memory caches cleanly
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (err: any) {
+      showToast((isMr ? 'रीसेट करताना त्रुटी आली: ' : 'Error during hard reset: ') + err.message, 'error');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="flex-1 p-6 overflow-y-auto space-y-4">
       {/* Header */}
@@ -238,16 +284,30 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
             </p>
           </div>
 
-          {successMsg && (
-            <div className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center gap-1.5 animate-in fade-in">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>{successMsg}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {successMsg && (
+              <div className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center gap-1.5 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>{successMsg}</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setShowResetModal(true);
+                setConfirmInput('');
+                setConfirmedCheck(false);
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+            >
+              <AlertTriangle className="w-4 h-4 text-rose-600" />
+              <span>{isMr ? 'हार्ड रीसेट' : 'Hard Reset'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Selection */}
-        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
           <button
             type="button"
             onClick={() => setActiveTab('shop')}
@@ -303,6 +363,18 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span>{isMr ? 'सिस्टीम व अपडेट्स' : 'System & Updates'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('danger')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'danger'
+                ? 'bg-rose-700 text-white'
+                : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+            <span>{isMr ? 'धोकादायक क्षेत्र / हार्ड रीसेट' : 'Danger Zone / Hard Reset'}</span>
           </button>
         </div>
       </div>
@@ -890,6 +962,208 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
               <span className="text-white bg-emerald-900 px-2 py-0.5 rounded border border-emerald-700 font-semibold">
                 {isMr ? 'सुरक्षित व प्रमाणित' : 'Protected & Certified'}
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Danger Zone / Hard Reset Tab */}
+      {activeTab === 'danger' && (
+        <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-2xs space-y-6 text-xs">
+          <div className="flex items-start gap-4 p-4 rounded-xl bg-rose-50 border border-rose-200">
+            <div className="p-3 bg-rose-100 rounded-full text-rose-700 shrink-0">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-rose-900">
+                {isMr ? 'धोकादायक क्षेत्र: सिस्टम हार्ड रीसेट (Hard Reset)' : 'Danger Zone: System Hard Reset'}
+              </h3>
+              <p className="text-xs text-rose-800 leading-relaxed">
+                {isMr 
+                  ? 'हार्ड रीसेट केल्याने तुमच्या स्थानिक डेटाबेसमधील सर्व विक्री नोंदी (Sales Invoices), स्टॉक आणि बॅचेस (Inventory Batches), खरेदी (Purchases), खर्च आणि उत्पादने कायमची नष्ट होतील. हा बदल पूर्ववत करता येणार नाही.'
+                  : 'Hard reset permanently purges sales invoices, stock inventory batches, purchases, expenses and product catalog directly from the local SQLite database. This action is irreversible.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="border border-slate-200 rounded-xl p-5 space-y-4">
+            <h4 className="font-bold text-sm text-slate-800">
+              {isMr ? 'डेटा रीसेट पर्याय व सुरक्षितता नियम:' : 'Data Reset Guidelines & Safety Standards:'}
+            </h4>
+            <ul className="space-y-2 text-slate-600 list-disc pl-5">
+              <li>{isMr ? 'सर्व जुने बिलिंग, जीएसटी नोंदी आणि विक्री इतिहास नष्ट होतो.' : 'All billing, GST records and sales invoices are removed.'}</li>
+              <li>{isMr ? 'गोदाम साठा, बॅचेस व एक्सपायरी ट्रॅकिंग रीसेट होते.' : 'Godown inventory, batches and stock ledger are wiped.'}</li>
+              <li>{isMr ? 'तुम्ही उत्पादने आणि शेतकरी खात्यांचे पर्याय हवे असल्यास सुरक्षित ठेवू शकता.' : 'You can optionally retain farmer khata or product catalog.'}</li>
+              <li>{isMr ? 'विंडोज अ‍ॅप्लिकेशन ब्लॉक न करता सुरक्षित इन-अ‍ॅप मोडल पुष्टीकरण वापरले जाते.' : 'Uses a non-blocking in-app modal verification designed for desktop ERP.'}</li>
+            </ul>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <div>
+                <span className="font-bold text-slate-800 block text-xs">
+                  {isMr ? 'संपूर्ण सिस्टीम पूर्ववत रीसेट करा' : 'Reset System Data to Clean State'}
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {isMr ? 'डेटा हटवण्यापूर्वी मोडलमध्ये पुष्टीकरण विचारले जाईल.' : 'A secure confirmation modal will appear before wiping.'}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowResetModal(true);
+                  setConfirmInput('');
+                  setConfirmedCheck(false);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold rounded-lg flex items-center gap-2 cursor-pointer shadow-xs transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isMr ? 'हार्ड रीसेट सुरू करा' : 'Initiate Hard Reset'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Non-Blocking Custom Modal Confirmation Dialog */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden text-xs">
+            {/* Modal Header */}
+            <div className="bg-rose-600 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <AlertTriangle className="w-5 h-5 text-rose-200" />
+                <span>{isMr ? 'सिस्टम हार्ड रीसेट पुष्टीकरण' : 'System Hard Reset Confirmation'}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="text-white/80 hover:text-white p-1 rounded-md hover:bg-rose-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs">
+                <strong>{isMr ? 'सावधानता:' : 'Warning:'}</strong>{' '}
+                {isMr 
+                  ? 'ही कृती अपरिवर्तनीय आहे. निवडलेला डेटा स्थानिक SQLite डेटाबेसमधून कायमचा डिलीट केला जाईल.' 
+                  : 'This action is permanent and cannot be reversed. Selected data will be permanently wiped from the SQLite database.'}
+              </div>
+
+              <div className="space-y-2">
+                <span className="font-bold text-slate-800 block">
+                  {isMr ? 'कोणता डेटा डिलीट करायचा ते निवडा:' : 'Select data to delete:'}
+                </span>
+
+                <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      disabled
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'विक्री नोंदी व बिले (Sales & Invoices) [अनिवार्य]' : 'Sales Invoices & Line Items [Mandatory]'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      disabled
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'साठा, बॅचेस व लेजर (Inventory & Stock Ledger) [अनिवार्य]' : 'Inventory Batches & Stock Ledger [Mandatory]'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={wipeProducts}
+                      onChange={(e) => setWipeProducts(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'उत्पादने मास्टर डेटा (Products Master Catalog)' : 'Products Master Catalog'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={wipeCustomers}
+                      onChange={(e) => setWipeCustomers(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'शेतकरी / ग्राहक खाती (Farmers & Customer Khata)' : 'Farmers & Customer Khata'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={wipeSuppliers}
+                      onChange={(e) => setWipeSuppliers(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'सप्लायर खाती व खरेदी (Suppliers & Purchases)' : 'Suppliers & Purchases'}</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Confirmation Checkbox */}
+              <label className="flex items-start gap-2 cursor-pointer p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                <input
+                  type="checkbox"
+                  checked={confirmedCheck}
+                  onChange={(e) => setConfirmedCheck(e.target.checked)}
+                  className="w-4 h-4 rounded text-rose-600 border-amber-400 mt-0.5"
+                />
+                <span className="font-semibold">
+                  {isMr 
+                    ? 'मला समजले आहे की हा डेटा कायमचा नष्ट होईल आणि पूर्ववत करता येणार नाही.' 
+                    : 'I understand that this action is irreversible and the selected data will be permanently wiped.'}
+                </span>
+              </label>
+
+              {/* Verification Text Input */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">
+                  {isMr ? 'पुष्टी करण्यासाठी खाली "RESET" टाइप करा:' : 'Type "RESET" below to confirm:'}
+                </label>
+                <input
+                  type="text"
+                  value={confirmInput}
+                  onChange={(e) => setConfirmInput(e.target.value)}
+                  placeholder="RESET"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono font-bold tracking-wider focus:outline-rose-500 bg-slate-50 uppercase"
+                />
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                disabled={resetting}
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer transition-colors"
+              >
+                {isMr ? 'रद्द करा' : 'Cancel'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteHardReset}
+                disabled={!confirmedCheck || confirmInput.trim().toUpperCase() !== 'RESET' || resetting}
+                className="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>
+                  {resetting 
+                    ? (isMr ? 'डेटा नष्ट करत आहे...' : 'Resetting...') 
+                    : (isMr ? 'कायमचा डेटा नष्ट करा' : 'Permanently Wipe Data')}
+                </span>
+              </button>
             </div>
           </div>
         </div>

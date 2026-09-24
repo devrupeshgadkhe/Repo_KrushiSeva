@@ -147,13 +147,6 @@
   }
 
   /* Thermal Print Specifics */
-  body.thermal-print-mode {
-    @page {
-      size: 80mm auto;
-      margin: 2mm;
-    }
-  }
-
   body.thermal-print-mode #invoice-print-container {
     max-width: 80mm !important;
     width: 80mm !important;

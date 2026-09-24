@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { 
   LayoutDashboard, 
   ShoppingCart, 
@@ -15,11 +15,11 @@ import {
   Settings,
   Building2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileSpreadsheet
 } from 'lucide-react';
 import { AppLanguage } from '../../types';
 import { getTranslation } from '../../i18n';
-import { updateService, UpdateState } from '../../services/updateService';
 
 export type NavItemKey = 
   | 'dashboard'
@@ -33,6 +33,7 @@ export type NavItemKey =
   | 'expenses'
   | 'compliance'
   | 'reports'
+  | 'bulk_data'
   | 'backup'
   | 'business'
   | 'settings';
@@ -56,13 +57,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   lowStockCount = 0,
   expiringCount = 0,
 }) => {
-  const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
-
-  useEffect(() => {
-    const unsub = updateService.subscribe(setUpdateState);
-    return unsub;
-  }, []);
-
   const navItems: { key: NavItemKey; labelKey: any; icon: any; badge?: number; badgeColor?: string }[] = [
     { key: 'dashboard', labelKey: 'nav_dashboard', icon: LayoutDashboard },
     { key: 'pos', labelKey: 'nav_pos', icon: ShoppingCart },
@@ -81,6 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { key: 'expenses', labelKey: 'nav_expenses', icon: WalletCards },
     { key: 'compliance', labelKey: 'nav_compliance', icon: ShieldCheck },
     { key: 'reports', labelKey: 'nav_reports', icon: BarChart3 },
+    { key: 'bulk_data', labelKey: 'nav_bulk_data', icon: FileSpreadsheet },
     { key: 'business', labelKey: 'nav_business', icon: Building2 },
     { key: 'backup', labelKey: 'nav_backup', icon: HardDriveDownload },
     { key: 'settings', labelKey: 'nav_settings', icon: Settings },
@@ -133,18 +128,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Collapse Toggle Footer */}
-      <div className="p-2 border-t border-slate-800 flex items-center justify-between">
-        {!collapsed && (
-          <div className="text-[10px] text-slate-400 px-2 font-mono flex items-center gap-1.5">
-            <span className="font-bold text-emerald-400">v{updateState.currentVersion}</span>
-            <span className="text-slate-600">•</span>
-            <span className="font-sans">{getTranslation('offline_secure', currentLang)}</span>
+      {/* Company Branding & Collapse Toggle Footer */}
+      <div className="p-2 border-t border-slate-800 flex items-center justify-between gap-1 overflow-hidden">
+        {!collapsed ? (
+          <div className="flex-1 min-w-0 px-1.5" title="Pradipayan Software Solutions">
+            <span className="text-[11px] font-semibold text-slate-300 tracking-tight truncate block leading-snug hover:text-emerald-400 transition-colors">
+              Pradipayan Software Solutions
+            </span>
+          </div>
+        ) : (
+          <div className="flex-1 min-w-0 text-center" title="Pradipayan Software Solutions">
+            <span className="text-[10px] font-bold text-emerald-400 font-mono tracking-wider">
+              PSS
+            </span>
           </div>
         )}
         <button
           onClick={onToggleCollapse}
-          className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer ml-auto"
+          className="p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
           title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

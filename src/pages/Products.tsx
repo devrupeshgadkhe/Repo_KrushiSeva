@@ -54,11 +54,17 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
   const [toxicityColor, setToxicityColor] = useState('');
   const [openingStock, setOpeningStock] = useState<number | ''>(10);
 
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+
   const loadProducts = async () => {
     setLoading(true);
     try {
-      const list = await dbService.getProducts(search, categoryFilter);
+      const list = await dbService.getProducts(search, categoryFilter === 'All' ? '' : categoryFilter);
       setProducts(list);
+      // If "All" categories is selected, auto-select all products as requested
+      if (categoryFilter === 'All') {
+        setSelectedProductIds(list.map((p) => p.id));
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -69,6 +75,75 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
   useEffect(() => {
     loadProducts();
   }, [search, categoryFilter]);
+
+  const handleToggleSelectProduct = (id: number) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllProducts = () => {
+    if (selectedProductIds.length === products.length) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(products.map((p) => p.id));
+    }
+  };
+
+  const handleBulkDeactivate = () => {
+    if (selectedProductIds.length === 0) return;
+    showConfirm({
+      title: currentLang === 'mr' ? 'निवडलेली उत्पादने निष्क्रिय करा' : 'Deactivate Selected Products',
+      message: currentLang === 'mr'
+        ? `आपण खात्रीपूर्वक निवडलेली ${selectedProductIds.length} उत्पादने निष्क्रिय करू इच्छिता?`
+        : `Are you sure you want to deactivate ${selectedProductIds.length} selected products?`,
+      confirmText: currentLang === 'mr' ? 'होय, निष्क्रिय करा' : 'Yes, Deactivate',
+      cancelText: currentLang === 'mr' ? 'रद्द करा' : 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          for (const id of selectedProductIds) {
+            await dbService.deactivateProduct(id);
+          }
+          showToast(
+            currentLang === 'mr'
+              ? `${selectedProductIds.length} उत्पादने निष्क्रिय केली.`
+              : `${selectedProductIds.length} products deactivated.`,
+            'success'
+          );
+          setSelectedProductIds([]);
+          loadProducts();
+          onRefreshData?.();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to deactivate products', 'error');
+        }
+      }
+    });
+  };
+
+  const handleExportSelectedCSV = () => {
+    const targetProducts = selectedProductIds.length > 0
+      ? products.filter((p) => selectedProductIds.includes(p.id))
+      : products;
+
+    const data = targetProducts.map((p) => ({
+      Code: p.product_code,
+      Name: p.name,
+      'Local Name': p.name_mr || '',
+      Category: p.category,
+      HSN: p.hsn_code,
+      Unit: p.unit,
+      'Pack Size': p.pack_size,
+      'Purchase Rate': p.purchase_rate,
+      MRP: p.mrp,
+      'Selling Rate': p.selling_rate,
+      'GST %': p.gst_rate,
+      'Low Stock Alert': p.low_stock_alert,
+      Barcode: p.barcode || '',
+      Technical: p.technical_name || '',
+    }));
+    exportToCSV(`Products_${targetProducts.length}_${new Date().toISOString().slice(0, 10)}`, data);
+  };
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
@@ -269,7 +344,10 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
 
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e) => {
+              const newCat = e.target.value;
+              setCategoryFilter(newCat);
+            }}
             className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50 font-medium w-full sm:w-56"
           >
             <option value="All">{getTranslation('all_categories', currentLang)}</option>
@@ -280,6 +358,55 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
             ))}
           </select>
         </div>
+
+        {/* Selection Status Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-700">
+              {currentLang === 'mr' ? 'निवड स्थिती:' : 'Selection Status:'}
+            </span>
+            {selectedProductIds.length === 0 ? (
+              <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+                {currentLang === 'mr' ? 'कोणतेही उत्पादन निवडलेले नाही' : 'No product is selected'}
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                {selectedProductIds.length} / {products.length} {currentLang === 'mr' ? 'उत्पादने निवडलेली आहेत' : 'products selected'}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSelectAllProducts}
+              className="px-2.5 py-1 rounded border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer"
+            >
+              {selectedProductIds.length === products.length && products.length > 0
+                ? (currentLang === 'mr' ? 'सर्व निवड रद्द करा' : 'Deselect All')
+                : (currentLang === 'mr' ? `सर्व उत्पादने निवडा (${products.length})` : `Select All Products (${products.length})`)}
+            </button>
+
+            {selectedProductIds.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportSelectedCSV}
+                  className="px-2.5 py-1 rounded bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-xs font-semibold cursor-pointer"
+                >
+                  {currentLang === 'mr' ? `एक्सपोर्ट (${selectedProductIds.length})` : `Export (${selectedProductIds.length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDeactivate}
+                  className="px-2.5 py-1 rounded bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 text-xs font-semibold cursor-pointer"
+                >
+                  {currentLang === 'mr' ? `निष्क्रिय करा (${selectedProductIds.length})` : `Deactivate (${selectedProductIds.length})`}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Table */}
@@ -288,6 +415,15 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
               <tr>
+                <th className="p-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={products.length > 0 && selectedProductIds.length === products.length}
+                    onChange={handleSelectAllProducts}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    title={currentLang === 'mr' ? 'सर्व निवडा' : 'Select All'}
+                  />
+                </th>
                 <th className="p-3">{getTranslation('product_code', currentLang)}</th>
                 <th className="p-3">{getTranslation('product_name', currentLang)}</th>
                 <th className="p-3">{getTranslation('category', currentLang)}</th>
@@ -303,7 +439,7 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
             <tbody className="divide-y divide-slate-100">
               {products.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                  <td colSpan={11} className="py-12 text-center text-slate-400">
                     {getTranslation('no_products_found', currentLang)}
                   </td>
                 </tr>
@@ -311,9 +447,18 @@ export const Products: React.FC<ProductsProps> = ({ currentLang, onRefreshData }
                 products.map((p) => {
                   const catMatch = categoryOptions.find((c) => c.value === p.category);
                   const catLabel = catMatch ? (currentLang === 'mr' ? catMatch.mr : catMatch.en) : p.category;
+                  const isSelected = selectedProductIds.includes(p.id);
 
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                    <tr key={p.id} className={`hover:bg-slate-50/70 transition-colors ${isSelected ? 'bg-emerald-50/40' : ''}`}>
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectProduct(p.id)}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="p-3 font-mono text-slate-500 font-bold">{p.product_code}</td>
                       <td className="p-3">
                         <div className="font-bold text-slate-900">{currentLang === 'mr' && p.name_mr ? p.name_mr : p.name}</div>

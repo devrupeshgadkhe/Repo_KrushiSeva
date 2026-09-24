@@ -286,7 +286,17 @@ export const Inventory: React.FC<InventoryProps> = ({ currentLang, onRefreshData
                     </td>
                     <td className="p-3">
                       <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                        {b.product_category}
+                        {(() => {
+                          const cat = categories.find((c) => c.value.toLowerCase() === (b.product_category || '').toLowerCase());
+                          if (cat) return isMr ? cat.mr : cat.en;
+                          const c = (b.product_category || '').toLowerCase();
+                          if (c.includes('fert')) return isMr ? 'रासायनिक खते' : 'Fertilizers';
+                          if (c.includes('seed')) return isMr ? 'बियाणे' : 'Seeds';
+                          if (c.includes('pest') || c.includes('insect') || c.includes('fung')) return isMr ? 'कीटकनाशके' : 'Pesticides';
+                          if (c.includes('bio') || c.includes('tonic')) return isMr ? 'सेंद्रिय / टॉनिक' : 'Bio Fertilizers';
+                          if (c.includes('equip') || c.includes('tool')) return isMr ? 'कृषी साधने' : 'Equipment';
+                          return b.product_category || (isMr ? 'सर्वसाधारण' : 'General');
+                        })()}
                       </span>
                     </td>
                     <td className="p-3 font-mono font-bold text-slate-800">
@@ -307,9 +317,16 @@ export const Inventory: React.FC<InventoryProps> = ({ currentLang, onRefreshData
                       )}
                     </td>
                     <td className="p-3 text-center">
-                      <span className={`font-mono font-bold text-xs px-2 py-0.5 rounded ${b.current_qty <= 5 ? 'bg-rose-100 text-rose-800' : 'text-slate-900'}`}>
-                        {b.current_qty} {b.unit}
-                      </span>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`font-mono font-bold text-xs px-2 py-0.5 rounded ${b.current_qty <= 5 ? 'bg-rose-100 text-rose-800' : 'text-slate-900'}`}>
+                          {b.current_qty} {b.unit}
+                        </span>
+                        {b.current_qty <= 5 && (
+                          <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-full">
+                            {getTranslation('low_stock_badge', currentLang)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3 text-right font-mono text-slate-600">
                       {formatINR(b.purchase_rate)}
@@ -321,24 +338,34 @@ export const Inventory: React.FC<InventoryProps> = ({ currentLang, onRefreshData
                       {formatINR(b.current_qty * b.purchase_rate)}
                     </td>
                     <td className="p-3 text-center">
-                      {b.status === 'Active' && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>{getTranslation('active_status', currentLang)}</span>
-                        </span>
-                      )}
-                      {b.status === 'Near Expiry' && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          <span>{getTranslation('expiring_status', currentLang)}</span>
-                        </span>
-                      )}
-                      {b.status === 'Expired' && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 inline-flex items-center gap-1">
-                          <XCircle className="w-3 h-3" />
-                          <span>{getTranslation('expired_status', currentLang)}</span>
-                        </span>
-                      )}
+                      {(() => {
+                        const st = (b.status || '').toLowerCase();
+                        const isExp = b.days_to_expiry < 0 || st.includes('expir') && !st.includes('near');
+                        const isNear = !isExp && (b.days_to_expiry <= 90 || st.includes('near'));
+
+                        if (isExp) {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 inline-flex items-center gap-1">
+                              <XCircle className="w-3 h-3" />
+                              <span>{getTranslation('expired_status', currentLang)}</span>
+                            </span>
+                          );
+                        }
+                        if (isNear) {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              <span>{getTranslation('expiring_status', currentLang)}</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{getTranslation('active_status', currentLang)}</span>
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-3 text-center">
                       <button

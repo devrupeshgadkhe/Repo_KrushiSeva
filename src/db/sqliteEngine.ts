@@ -382,10 +382,74 @@ class SQLiteDatabaseManager {
     }
   }
 
+  public async hardResetDatabase(options: { wipeProducts?: boolean; wipeCustomers?: boolean; wipeSuppliers?: boolean } = {}): Promise<void> {
+    const db = await this.getDb();
+    db.run('BEGIN TRANSACTION;');
+    try {
+      // Always wipe transaction & movement tables
+      db.run('DELETE FROM sale_items;');
+      db.run('DELETE FROM sales;');
+      db.run('DELETE FROM purchase_items;');
+      db.run('DELETE FROM purchases;');
+      db.run('DELETE FROM inventory_batches;');
+      db.run('DELETE FROM stock_ledger;');
+      db.run('DELETE FROM farmer_khata;');
+      db.run('DELETE FROM supplier_ledger;');
+      db.run('DELETE FROM expenses;');
+      db.run('DELETE FROM cash_drawer_logs;');
+      db.run('DELETE FROM pesticide_sales_records;');
+      db.run('DELETE FROM pesticide_stock_records;');
+
+      if (options.wipeProducts !== false) {
+        db.run('DELETE FROM products;');
+      }
+      if (options.wipeCustomers !== false) {
+        db.run('DELETE FROM customer_crops;');
+        db.run('DELETE FROM customers;');
+      } else {
+        db.run('UPDATE customers SET current_balance = 0;');
+      }
+      if (options.wipeSuppliers !== false) {
+        db.run('DELETE FROM suppliers;');
+      } else {
+        db.run('UPDATE suppliers SET current_balance = 0;');
+      }
+
+      try {
+        db.run("DELETE FROM sqlite_sequence WHERE name IN ('sales', 'sale_items', 'purchases', 'purchase_items', 'inventory_batches', 'stock_ledger', 'farmer_khata', 'supplier_ledger', 'expenses', 'pesticide_sales_records');");
+        if (options.wipeProducts !== false) db.run("DELETE FROM sqlite_sequence WHERE name = 'products';");
+        if (options.wipeCustomers !== false) db.run("DELETE FROM sqlite_sequence WHERE name = 'customers';");
+        if (options.wipeSuppliers !== false) db.run("DELETE FROM sqlite_sequence WHERE name = 'suppliers';");
+      } catch {}
+
+      db.run('COMMIT;');
+      await this.saveToIndexedDB();
+    } catch (e) {
+      db.run('ROLLBACK;');
+      throw e;
+    }
+  }
+
+  private backendSyncTimer: any = null;
+  private syncBackend(bytes: Uint8Array) {
+    if (typeof window === 'undefined' || !window.fetch) return;
+    if (this.backendSyncTimer) clearTimeout(this.backendSyncTimer);
+    this.backendSyncTimer = setTimeout(() => {
+      try {
+        fetch('/api/backup/sync-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: bytes,
+        }).catch(() => {});
+      } catch {}
+    }, 2000);
+  }
+
   private async saveToIndexedDB(): Promise<void> {
     if (!this.db) return;
     try {
       const bytes = this.db.export();
+      this.syncBackend(bytes);
       const idb = await this.openIndexedDB();
       return new Promise((resolve, reject) => {
         const tx = idb.transaction('sqlite', 'readwrite');

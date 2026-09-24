@@ -2160,5 +2160,10 @@ export const dbService = {
     }
 
     return rows;
+  },
+
+  // ================= SYSTEM HARD RESET =================
+  async hardResetDatabase(options: { wipeProducts?: boolean; wipeCustomers?: boolean; wipeSuppliers?: boolean } = {}) {
+    return sqliteEngine.hardResetDatabase(options);
   }
 };

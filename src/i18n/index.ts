@@ -1065,11 +1065,38 @@ export const translations = {
     bulk_data_title: 'बल्क डेटा इम्पोर्ट एवं एक्सपोर्ट',
     bulk_data_subtitle: 'उत्पाद, किसान और बिक्री डेटा एक्सेल (.xlsx) से सीधे लोड करें',
     hard_reset_btn: 'हार्ड रीसेट (डेटा पूर्ण साफ करें)',
-    hard_reset_title: 'सिस्टम हार्ड रीसेट (सभी डेटा हटाएं)'
+    hard_reset_title: 'सिस्टम हार्ड रीसेट (सभी डेटा हटाएं)',
+    nav_business: 'व्यापार प्रोफाइल',
+    add_farmer_btn: 'नया किसान जोड़ें',
+    collect_payment_btn: 'भुगतान जमा करें',
+    save_payment_btn: 'भुगतान सुरक्षित करें',
+    collect_payment_modal_title: 'किसान उधारी जमा प्रविष्टि',
+    current_udhaar_balance: 'वर्तमान उधारी शेष',
+    khata_ledger_statement: 'खाताबही विवरण',
+    add_farmer_title: 'नया किसान खाता खोलें',
+    edit_farmer_title: 'किसान विवरण संपादित करें',
+    select_farmer_to_view_ledger: 'खाताबही देखने के लिए किसान चुनें',
+    ledger_instruction: 'बाएं सूची से किसान चुनकर लेन-देन देखें।',
+    amount_received: 'प्राप्त राशि',
+    payment_notes: 'टिप्पणी / विवरण',
+    farmer_list_header: 'किसान सूची',
+    only_with_balance: 'केवल बकाया वाले',
+    total_outstanding: 'कुल उधारी बाकी',
+    crops: 'फसलें',
+    limit: 'मर्यादा',
+    balance: 'शेष',
+    no_transactions_found: 'कोई लेन-देन नहीं मिला।'
   }
 };
 
 export function getTranslation(key: keyof typeof translations.en | (string & {}), lang: AppLanguage = 'mr'): string {
   const dict = translations[lang] || translations.mr;
-  return (dict as any)[key] || (translations.en as any)[key] || (translations.mr as any)[key] || key;
+  const val = (dict as any)[key] || (translations.en as any)[key] || (translations.mr as any)[key];
+  if (val !== undefined && val !== null && val !== '') {
+    return val;
+  }
+  // If key not found anywhere, avoid printing ugly raw snake_case IDs on buttons/badges
+  return String(key)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
