@@ -1564,9 +1564,12 @@ export const dbService = {
       LEFT JOIN product_batches pb ON si.batch_id = pb.id
       WHERE s.status != 'Cancelled'
         AND (
-          p.category IN ('Insecticide', 'Pesticide', 'Fungicide', 'Herbicide', 'Bio-pesticide', 'Bio-Pesticide', 'PGR', 'Agrochemical')
+          p.category IN ('Insecticide', 'Pesticide', 'Fungicide', 'Herbicide', 'Bio-pesticide', 'Bio-Pesticide', 'PGR', 'Agrochemical', 'Plant Growth Regulator', 'कीटकनाशक', 'बुरशीनाशक', 'तणनाशक')
+          OR p.category LIKE '%Insecticide%' OR p.category LIKE '%Pesticide%' OR p.category LIKE '%Fungicide%' OR p.category LIKE '%Herbicide%'
+          OR p.category LIKE '%कीटकनाशक%' OR p.category LIKE '%बुरशीनाशक%' OR p.category LIKE '%तणनाशक%'
           OR (p.cib_registration_no IS NOT NULL AND p.cib_registration_no != '')
-          OR p.name LIKE '%Insecticide%' OR p.name LIKE '%Pesticide%' OR p.name LIKE '%कीटकनाशक%' OR p.name LIKE '%बुरशीनाशक%'
+          OR p.name LIKE '%Insecticide%' OR p.name LIKE '%Pesticide%' OR p.name LIKE '%कीटकनाशक%' OR p.name LIKE '%बुरशीनाशक%' OR p.name LIKE '%तणनाशक%'
+          OR (p.toxicity_class IS NOT NULL AND p.toxicity_class != '')
         )
       ORDER BY s.invoice_date DESC, s.id DESC
       LIMIT ?
@@ -1640,10 +1643,10 @@ export const dbService = {
       );
     }
     if (fromDate) {
-      results = results.filter(r => r.date >= fromDate);
+      results = results.filter(r => (r.date || '').slice(0, 10) >= fromDate);
     }
     if (toDate) {
-      results = results.filter(r => r.date <= toDate);
+      results = results.filter(r => (r.date || '').slice(0, 10) <= toDate);
     }
 
     return results.slice(0, limit);
@@ -1979,16 +1982,20 @@ export const dbService = {
   // ================= STATUTORY REPORTS (DOCUMENT 2 & 3 COMPLIANCE) =================
   async getMonthlyFertilizerRegister(monthStr?: string): Promise<StatutoryFertilizerRegisterRow[]> {
     await sqliteEngine.getDb();
-    const currentMonth = monthStr || new Date().toISOString().slice(0, 7);
+    const currentMonth = monthStr || (() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    })();
 
     // Retrieve fertilizer products from database
     const products = sqliteEngine.query<Product>(`
       SELECT * FROM products 
       WHERE active = 1 AND (
-        category = 'Fertilizer' OR 
-        category = 'Bio-fertilizer' OR 
-        category = 'Micronutrient' OR
-        fertilizer_grade IS NOT NULL
+        category IN ('Fertilizer', 'खते', 'खत', 'Bio-fertilizer', 'Micronutrient', 'Organic Fertilizer', 'Chemical Fertilizer')
+        OR category LIKE '%Fertilizer%' OR category LIKE '%खत%'
+        OR subcategory LIKE '%Fertilizer%' OR subcategory LIKE '%खत%'
+        OR (fertilizer_grade IS NOT NULL AND fertilizer_grade != '')
+        OR (npk_ratio IS NOT NULL AND npk_ratio != '')
       )
       ORDER BY id ASC
     `);
@@ -1997,68 +2004,107 @@ export const dbService = {
     let sr = 1;
 
     for (const prod of products) {
-      // Metric Tonnes calculation: 1 MT = 1000 Kg = 20 bags of 50kg
-      let kgMultiplier = 50;
-      const packLower = (prod.pack_size || '').toLowerCase();
-      const unitLower = (prod.unit || '').toLowerCase();
+      try {
+        // Metric Tonnes calculation: 1 MT = 1000 Kg
+        let kgMultiplier = 50;
+        const packLower = (prod.pack_size || '').toLowerCase();
+        const unitLower = (prod.unit || '').toLowerCase();
 
-      if (unitLower.includes('bag') || unitLower.includes('पोते') || unitLower.includes('बॅग')) {
         const match = packLower.match(/(\d+(\.\d+)?)/);
-        kgMultiplier = match ? parseFloat(match[1]) : 50;
-      } else if (unitLower.includes('kg') || unitLower.includes('किलो')) {
-        kgMultiplier = 1;
-      } else if (unitLower.includes('ton') || unitLower.includes('mt')) {
-        kgMultiplier = 1000;
-      } else if (unitLower.includes('gm') || unitLower.includes('ग्रॅम')) {
-        kgMultiplier = 0.001;
-      } else if (unitLower.includes('ltr') || unitLower.includes('लिटर')) {
-        kgMultiplier = 1.2; // Density approx for liquid fertilizer
+        const packNum = match ? parseFloat(match[1]) : 50;
+
+        if (packLower.includes('gm') || packLower.includes('ग्रॅम')) {
+          kgMultiplier = packNum / 1000;
+        } else if (packLower.includes('ton') || packLower.includes('mt') || packLower.includes('टन')) {
+          kgMultiplier = packNum * 1000;
+        } else if (packLower.includes('kg') || packLower.includes('किलो') || unitLower.includes('kg') || unitLower.includes('किलो')) {
+          kgMultiplier = packNum || 1;
+        } else if (packLower.includes('ltr') || packLower.includes('लिटर') || packLower.includes('ml') || packLower.includes('मिली') || unitLower.includes('ltr') || unitLower.includes('bottle')) {
+          if (packLower.includes('ml') || packLower.includes('मिली')) {
+            kgMultiplier = (packNum / 1000) * 1.2;
+          } else {
+            kgMultiplier = packNum * 1.2;
+          }
+        } else if (unitLower.includes('bag') || unitLower.includes('पोते') || unitLower.includes('बॅग')) {
+          kgMultiplier = packNum || 50;
+        } else {
+          kgMultiplier = packNum || 50;
+        }
+
+        const mtMultiplier = kgMultiplier / 1000;
+
+        // Inward (Purchases in this month)
+        const inwardRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(pi.quantity + COALESCE(pi.free_qty, 0)), 0) as total_qty
+          FROM purchase_items pi
+          JOIN purchases p ON pi.purchase_id = p.id
+          WHERE pi.product_id = ? AND p.status != 'Cancelled' AND COALESCE(p.invoice_date, substr(p.created_at, 1, 10)) LIKE ?
+        `, [prod.id, `${currentMonth}%`]);
+        const inwardQty = inwardRes?.total_qty || 0;
+        const inwardMt = Number((inwardQty * mtMultiplier).toFixed(3));
+
+        // Sales (Sales in this month)
+        const salesRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(si.quantity), 0) as total_qty
+          FROM sale_items si
+          JOIN sales s ON si.sale_id = s.id
+          WHERE si.product_id = ? AND s.status != 'Cancelled' AND COALESCE(s.invoice_date, substr(s.created_at, 1, 10)) LIKE ?
+        `, [prod.id, `${currentMonth}%`]);
+        const salesQty = salesRes?.total_qty || 0;
+        const salesMt = Number((salesQty * mtMultiplier).toFixed(3));
+
+        // Historical opening stock calculation:
+        // Opening stock at start of month = Initial batch opening + inward purchases before this month - sales before this month
+        const startOfMonth = `${currentMonth}-01`;
+        const inwardBeforeRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(pi.quantity + COALESCE(pi.free_qty, 0)), 0) as total_qty
+          FROM purchase_items pi
+          JOIN purchases p ON pi.purchase_id = p.id
+          WHERE pi.product_id = ? AND p.status != 'Cancelled' AND COALESCE(p.invoice_date, substr(p.created_at, 1, 10)) < ?
+        `, [prod.id, startOfMonth]);
+        const inwardBefore = inwardBeforeRes?.total_qty || 0;
+
+        const salesBeforeRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(si.quantity), 0) as total_qty
+          FROM sale_items si
+          JOIN sales s ON si.sale_id = s.id
+          WHERE si.product_id = ? AND s.status != 'Cancelled' AND COALESCE(s.invoice_date, substr(s.created_at, 1, 10)) < ?
+        `, [prod.id, startOfMonth]);
+        const salesBefore = salesBeforeRes?.total_qty || 0;
+
+        // Batch stock check
+        const batchRes = sqliteEngine.queryOne<{ initial_qty: number; current_stock: number }>(`
+          SELECT 
+            COALESCE(SUM(opening_qty), 0) as initial_qty,
+            COALESCE(SUM(current_qty), 0) as current_stock
+          FROM product_batches
+          WHERE product_id = ?
+        `, [prod.id]);
+
+        let baseOpening = batchRes?.initial_qty || 0;
+        if (baseOpening === 0 && (batchRes?.current_stock || 0) > 0 && inwardBefore === 0 && salesBefore === 0) {
+          baseOpening = Math.max(0, (batchRes?.current_stock || 0) + salesQty - inwardQty);
+        }
+
+        const openingQty = Math.max(0, baseOpening + inwardBefore - salesBefore);
+        const openingMt = Number((openingQty * mtMultiplier).toFixed(3));
+        const closingMt = Math.max(0, Number((openingMt + inwardMt - salesMt).toFixed(3)));
+
+        rows.push({
+          sr_no: sr++,
+          product_id: prod.id,
+          product_name: prod.name,
+          fertilizer_grade: prod.fertilizer_grade || prod.technical_name || prod.subcategory || prod.name,
+          company: prod.company || prod.brand || 'IFFCO',
+          opening_stock_mt: openingMt,
+          inward_mt: inwardMt,
+          sales_mt: salesMt,
+          closing_stock_mt: closingMt,
+          unit: 'MT'
+        });
+      } catch (err) {
+        console.error(`Error processing fertilizer row for product ${prod.id}:`, err);
       }
-
-      const mtMultiplier = kgMultiplier / 1000;
-
-      // Inward (Purchases in this month)
-      const inwardRes = sqliteEngine.queryOne<{ total_qty: number }>(`
-        SELECT COALESCE(SUM(pi.quantity), 0) as total_qty
-        FROM purchase_items pi
-        JOIN purchases p ON pi.purchase_id = p.id
-        WHERE pi.product_id = ? AND p.status != 'Cancelled' AND (p.invoice_date LIKE ? OR p.purchase_date LIKE ?)
-      `, [prod.id, `${currentMonth}%`, `${currentMonth}%`]);
-      const inwardQty = inwardRes?.total_qty || 0;
-      const inwardMt = Number((inwardQty * mtMultiplier).toFixed(3));
-
-      // Sales (Sales in this month)
-      const salesRes = sqliteEngine.queryOne<{ total_qty: number }>(`
-        SELECT COALESCE(SUM(si.quantity), 0) as total_qty
-        FROM sale_items si
-        JOIN sales s ON si.sale_id = s.id
-        WHERE si.product_id = ? AND s.status != 'Cancelled' AND s.invoice_date LIKE ?
-      `, [prod.id, `${currentMonth}%`]);
-      const salesQty = salesRes?.total_qty || 0;
-      const salesMt = Number((salesQty * mtMultiplier).toFixed(3));
-
-      // Stock from batches
-      const stockRes = sqliteEngine.queryOne<{ total_stock: number }>(`
-        SELECT COALESCE(SUM(current_qty), 0) as total_stock
-        FROM product_batches
-        WHERE product_id = ?
-      `, [prod.id]);
-      const currentStock = stockRes?.total_stock || 0;
-      const closingMt = Number((currentStock * mtMultiplier).toFixed(3));
-      const openingMt = Math.max(0, Number((closingMt - inwardMt + salesMt).toFixed(3)));
-
-      rows.push({
-        sr_no: sr++,
-        product_id: prod.id,
-        product_name: prod.name,
-        fertilizer_grade: prod.fertilizer_grade || prod.technical_name || prod.subcategory || prod.name,
-        company: prod.company || prod.brand || 'IFFCO',
-        opening_stock_mt: openingMt,
-        inward_mt: inwardMt,
-        sales_mt: salesMt,
-        closing_stock_mt: closingMt,
-        unit: 'MT'
-      });
     }
 
     return rows;
@@ -2066,12 +2112,20 @@ export const dbService = {
 
   async getMonthlySeedRegister(monthStr?: string): Promise<StatutorySeedRegisterRow[]> {
     await sqliteEngine.getDb();
-    const currentMonth = monthStr || new Date().toISOString().slice(0, 7);
+    const currentMonth = monthStr || (() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    })();
 
     // Retrieve seed products from database
     const products = sqliteEngine.query<Product>(`
       SELECT * FROM products 
-      WHERE active = 1 AND (category = 'Seed' OR seed_variety IS NOT NULL)
+      WHERE active = 1 AND (
+        category IN ('Seed', 'Seeds', 'बियाणे', 'बिया', 'Certified Seed', 'Hybrid Seed')
+        OR category LIKE '%Seed%' OR category LIKE '%बिया%'
+        OR subcategory LIKE '%Seed%' OR subcategory LIKE '%बिया%'
+        OR (seed_variety IS NOT NULL AND seed_variety != '')
+      )
       ORDER BY id ASC
     `);
 
@@ -2079,67 +2133,98 @@ export const dbService = {
     let sr = 1;
 
     for (const prod of products) {
-      const isCotton = prod.name.toLowerCase().includes('cotton') || 
-                       prod.name.toLowerCase().includes('कापूस') || 
-                       (prod.unit || '').toLowerCase().includes('pkt') ||
-                       (prod.unit || '').toLowerCase().includes('पाकीट');
+      try {
+        const isCotton = prod.name.toLowerCase().includes('cotton') || 
+                         prod.name.toLowerCase().includes('कापूस') || 
+                         prod.name.toLowerCase().includes('rch') ||
+                         prod.name.toLowerCase().includes('bollgard') ||
+                         (prod.unit || '').toLowerCase().includes('pkt') ||
+                         (prod.unit || '').toLowerCase().includes('पाकीट');
 
-      let multiplier = 1;
-      let unitLabel = 'Pkt';
+        let multiplier = 1;
+        let unitLabel = 'Quintal';
 
-      if (isCotton) {
-        unitLabel = 'Packet';
-        multiplier = 1;
-      } else {
-        unitLabel = 'Quintal';
-        const packLower = (prod.pack_size || '').toLowerCase();
-        const match = packLower.match(/(\d+(\.\d+)?)/);
-        const bagKg = match ? parseFloat(match[1]) : 30;
-        multiplier = bagKg / 100; // 100 Kg = 1 Quintal
+        if (isCotton) {
+          unitLabel = 'Packet';
+          multiplier = 1;
+        } else {
+          unitLabel = 'Quintal';
+          const packLower = (prod.pack_size || '').toLowerCase();
+          const match = packLower.match(/(\d+(\.\d+)?)/);
+          const bagKg = match ? parseFloat(match[1]) : 30;
+          multiplier = bagKg / 100; // 100 Kg = 1 Quintal
+        }
+
+        // Inward (Purchases in this month)
+        const inwardRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(pi.quantity + COALESCE(pi.free_qty, 0)), 0) as total_qty
+          FROM purchase_items pi
+          JOIN purchases p ON pi.purchase_id = p.id
+          WHERE pi.product_id = ? AND p.status != 'Cancelled' AND COALESCE(p.invoice_date, substr(p.created_at, 1, 10)) LIKE ?
+        `, [prod.id, `${currentMonth}%`]);
+        const inwardQty = inwardRes?.total_qty || 0;
+        const inward = Number((inwardQty * multiplier).toFixed(2));
+
+        // Sales (Sales in this month)
+        const salesRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(si.quantity), 0) as total_qty
+          FROM sale_items si
+          JOIN sales s ON si.sale_id = s.id
+          WHERE si.product_id = ? AND s.status != 'Cancelled' AND COALESCE(s.invoice_date, substr(s.created_at, 1, 10)) LIKE ?
+        `, [prod.id, `${currentMonth}%`]);
+        const salesQty = salesRes?.total_qty || 0;
+        const sales = Number((salesQty * multiplier).toFixed(2));
+
+        // Historical opening stock
+        const startOfMonth = `${currentMonth}-01`;
+        const inwardBeforeRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(pi.quantity + COALESCE(pi.free_qty, 0)), 0) as total_qty
+          FROM purchase_items pi
+          JOIN purchases p ON pi.purchase_id = p.id
+          WHERE pi.product_id = ? AND p.status != 'Cancelled' AND COALESCE(p.invoice_date, substr(p.created_at, 1, 10)) < ?
+        `, [prod.id, startOfMonth]);
+        const inwardBefore = inwardBeforeRes?.total_qty || 0;
+
+        const salesBeforeRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(si.quantity), 0) as total_qty
+          FROM sale_items si
+          JOIN sales s ON si.sale_id = s.id
+          WHERE si.product_id = ? AND s.status != 'Cancelled' AND COALESCE(s.invoice_date, substr(s.created_at, 1, 10)) < ?
+        `, [prod.id, startOfMonth]);
+        const salesBefore = salesBeforeRes?.total_qty || 0;
+
+        const batchRes = sqliteEngine.queryOne<{ initial_qty: number; current_stock: number }>(`
+          SELECT 
+            COALESCE(SUM(opening_qty), 0) as initial_qty,
+            COALESCE(SUM(current_qty), 0) as current_stock
+          FROM product_batches
+          WHERE product_id = ?
+        `, [prod.id]);
+
+        let baseOpening = batchRes?.initial_qty || 0;
+        if (baseOpening === 0 && (batchRes?.current_stock || 0) > 0 && inwardBefore === 0 && salesBefore === 0) {
+          baseOpening = Math.max(0, (batchRes?.current_stock || 0) + salesQty - inwardQty);
+        }
+
+        const openingQty = Math.max(0, baseOpening + inwardBefore - salesBefore);
+        const opening = Number((openingQty * multiplier).toFixed(2));
+        const closing = Math.max(0, Number((opening + inward - sales).toFixed(2)));
+
+        rows.push({
+          sr_no: sr++,
+          product_id: prod.id,
+          crop_name: prod.seed_variety || prod.name,
+          seed_variety: prod.seed_variety || prod.name,
+          company: prod.company || prod.brand || 'Certified Seeds Ltd',
+          opening_stock: opening,
+          inward: inward,
+          sales: sales,
+          closing_stock: closing,
+          unit: unitLabel
+        });
+      } catch (err) {
+        console.error(`Error processing seed row for product ${prod.id}:`, err);
       }
-
-      // Inward (Purchases in this month)
-      const inwardRes = sqliteEngine.queryOne<{ total_qty: number }>(`
-        SELECT COALESCE(SUM(pi.quantity), 0) as total_qty
-        FROM purchase_items pi
-        JOIN purchases p ON pi.purchase_id = p.id
-        WHERE pi.product_id = ? AND p.status != 'Cancelled' AND (p.invoice_date LIKE ? OR p.purchase_date LIKE ?)
-      `, [prod.id, `${currentMonth}%`, `${currentMonth}%`]);
-      const inwardQty = inwardRes?.total_qty || 0;
-      const inward = Number((inwardQty * multiplier).toFixed(2));
-
-      // Sales (Sales in this month)
-      const salesRes = sqliteEngine.queryOne<{ total_qty: number }>(`
-        SELECT COALESCE(SUM(si.quantity), 0) as total_qty
-        FROM sale_items si
-        JOIN sales s ON si.sale_id = s.id
-        WHERE si.product_id = ? AND s.status != 'Cancelled' AND s.invoice_date LIKE ?
-      `, [prod.id, `${currentMonth}%`]);
-      const salesQty = salesRes?.total_qty || 0;
-      const sales = Number((salesQty * multiplier).toFixed(2));
-
-      // Stock from batches
-      const stockRes = sqliteEngine.queryOne<{ total_stock: number }>(`
-        SELECT COALESCE(SUM(current_qty), 0) as total_stock
-        FROM product_batches
-        WHERE product_id = ?
-      `, [prod.id]);
-      const currentStock = stockRes?.total_stock || 0;
-      const closing = Number((currentStock * multiplier).toFixed(2));
-      const opening = Math.max(0, Number((closing - inward + sales).toFixed(2)));
-
-      rows.push({
-        sr_no: sr++,
-        product_id: prod.id,
-        crop_name: prod.seed_variety || prod.name,
-        seed_variety: prod.seed_variety || prod.name,
-        company: prod.company || prod.brand || 'Certified Seeds Ltd',
-        opening_stock: opening,
-        inward: inward,
-        sales: sales,
-        closing_stock: closing,
-        unit: unitLabel
-      });
     }
 
     return rows;
@@ -2147,15 +2232,21 @@ export const dbService = {
 
   async getMonthlyPesticideStockRegister(monthStr?: string): Promise<StatutoryPesticideRegisterRow[]> {
     await sqliteEngine.getDb();
-    const currentMonth = monthStr || new Date().toISOString().slice(0, 7);
+    const currentMonth = monthStr || (() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    })();
 
     // Retrieve pesticide and agrochemical products
     const products = sqliteEngine.query<Product>(`
       SELECT * FROM products 
       WHERE active = 1 AND (
-        category IN ('Insecticide', 'Pesticide', 'Fungicide', 'Herbicide', 'Bio-pesticide', 'Bio-Pesticide', 'PGR', 'Agrochemical')
+        category IN ('Insecticide', 'Pesticide', 'Fungicide', 'Herbicide', 'Bio-pesticide', 'Bio-Pesticide', 'PGR', 'Agrochemical', 'Plant Growth Regulator', 'कीटकनाशक', 'बुरशीनाशक', 'तणनाशक')
+        OR category LIKE '%Insecticide%' OR category LIKE '%Pesticide%' OR category LIKE '%Fungicide%' OR category LIKE '%Herbicide%'
+        OR category LIKE '%कीटकनाशक%' OR category LIKE '%बुरशीनाशक%' OR category LIKE '%तणनाशक%'
         OR (cib_registration_no IS NOT NULL AND cib_registration_no != '')
-        OR name LIKE '%Insecticide%' OR name LIKE '%Pesticide%' OR name LIKE '%कीटकनाशक%' OR name LIKE '%बुरशीनाशक%'
+        OR name LIKE '%Insecticide%' OR name LIKE '%Pesticide%' OR name LIKE '%कीटकनाशक%' OR name LIKE '%बुरशीनाशक%' OR name LIKE '%तणनाशक%'
+        OR (toxicity_class IS NOT NULL AND toxicity_class != '')
       )
       ORDER BY name ASC
     `);
@@ -2164,46 +2255,78 @@ export const dbService = {
     let sr = 1;
 
     for (const prod of products) {
-      // Inward (Purchases in this month)
-      const inwardRes = sqliteEngine.queryOne<{ total_qty: number }>(`
-        SELECT COALESCE(SUM(pi.quantity), 0) as total_qty
-        FROM purchase_items pi
-        JOIN purchases p ON pi.purchase_id = p.id
-        WHERE pi.product_id = ? AND p.status != 'Cancelled' AND (p.invoice_date LIKE ? OR p.purchase_date LIKE ?)
-      `, [prod.id, `${currentMonth}%`, `${currentMonth}%`]);
-      const inward = Number((inwardRes?.total_qty || 0).toFixed(2));
+      try {
+        // Inward (Purchases in this month)
+        const inwardRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(pi.quantity + COALESCE(pi.free_qty, 0)), 0) as total_qty
+          FROM purchase_items pi
+          JOIN purchases p ON pi.purchase_id = p.id
+          WHERE pi.product_id = ? AND p.status != 'Cancelled' AND COALESCE(p.invoice_date, substr(p.created_at, 1, 10)) LIKE ?
+        `, [prod.id, `${currentMonth}%`]);
+        const inwardQty = inwardRes?.total_qty || 0;
+        const inward = Number(inwardQty.toFixed(2));
 
-      // Sales (Sales in this month)
-      const salesRes = sqliteEngine.queryOne<{ total_qty: number }>(`
-        SELECT COALESCE(SUM(si.quantity), 0) as total_qty
-        FROM sale_items si
-        JOIN sales s ON si.sale_id = s.id
-        WHERE si.product_id = ? AND s.status != 'Cancelled' AND s.invoice_date LIKE ?
-      `, [prod.id, `${currentMonth}%`]);
-      const sales = Number((salesRes?.total_qty || 0).toFixed(2));
+        // Sales (Sales in this month)
+        const salesRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(si.quantity), 0) as total_qty
+          FROM sale_items si
+          JOIN sales s ON si.sale_id = s.id
+          WHERE si.product_id = ? AND s.status != 'Cancelled' AND COALESCE(s.invoice_date, substr(s.created_at, 1, 10)) LIKE ?
+        `, [prod.id, `${currentMonth}%`]);
+        const salesQty = salesRes?.total_qty || 0;
+        const sales = Number(salesQty.toFixed(2));
 
-      // Current stock in batches
-      const stockRes = sqliteEngine.queryOne<{ total_stock: number }>(`
-        SELECT COALESCE(SUM(current_qty), 0) as total_stock
-        FROM product_batches
-        WHERE product_id = ?
-      `, [prod.id]);
-      const closing = Number((stockRes?.total_stock || 0).toFixed(2));
-      const opening = Math.max(0, Number((closing - inward + sales).toFixed(2)));
+        // Historical opening stock
+        const startOfMonth = `${currentMonth}-01`;
+        const inwardBeforeRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(pi.quantity + COALESCE(pi.free_qty, 0)), 0) as total_qty
+          FROM purchase_items pi
+          JOIN purchases p ON pi.purchase_id = p.id
+          WHERE pi.product_id = ? AND p.status != 'Cancelled' AND COALESCE(p.invoice_date, substr(p.created_at, 1, 10)) < ?
+        `, [prod.id, startOfMonth]);
+        const inwardBefore = inwardBeforeRes?.total_qty || 0;
 
-      rows.push({
-        sr_no: sr++,
-        product_id: prod.id,
-        product_name: prod.name,
-        technical_name: prod.technical_name || (prod as any).chemical_content || prod.category || 'Pesticide Formulation',
-        cib_no: prod.cib_registration_no || 'CIR-3841/2021',
-        company: prod.company || prod.brand || 'Agro Chemicals India',
-        opening_stock: opening,
-        inward: inward,
-        sales: sales,
-        closing_stock: closing,
-        unit: prod.unit || 'Ltr'
-      });
+        const salesBeforeRes = sqliteEngine.queryOne<{ total_qty: number }>(`
+          SELECT COALESCE(SUM(si.quantity), 0) as total_qty
+          FROM sale_items si
+          JOIN sales s ON si.sale_id = s.id
+          WHERE si.product_id = ? AND s.status != 'Cancelled' AND COALESCE(s.invoice_date, substr(s.created_at, 1, 10)) < ?
+        `, [prod.id, startOfMonth]);
+        const salesBefore = salesBeforeRes?.total_qty || 0;
+
+        const batchRes = sqliteEngine.queryOne<{ initial_qty: number; current_stock: number }>(`
+          SELECT 
+            COALESCE(SUM(opening_qty), 0) as initial_qty,
+            COALESCE(SUM(current_qty), 0) as current_stock
+          FROM product_batches
+          WHERE product_id = ?
+        `, [prod.id]);
+
+        let baseOpening = batchRes?.initial_qty || 0;
+        if (baseOpening === 0 && (batchRes?.current_stock || 0) > 0 && inwardBefore === 0 && salesBefore === 0) {
+          baseOpening = Math.max(0, (batchRes?.current_stock || 0) + salesQty - inwardQty);
+        }
+
+        const openingQty = Math.max(0, baseOpening + inwardBefore - salesBefore);
+        const opening = Number(openingQty.toFixed(2));
+        const closing = Math.max(0, Number((opening + inward - sales).toFixed(2)));
+
+        rows.push({
+          sr_no: sr++,
+          product_id: prod.id,
+          product_name: prod.name,
+          technical_name: prod.technical_name || (prod as any).chemical_content || prod.category || 'Pesticide Formulation',
+          cib_no: prod.cib_registration_no || 'CIR-3841/2021',
+          company: prod.company || prod.brand || 'Agro Chemicals India',
+          opening_stock: opening,
+          inward: inward,
+          sales: sales,
+          closing_stock: closing,
+          unit: prod.unit || 'Ltr'
+        });
+      } catch (err) {
+        console.error(`Error processing pesticide row for product ${prod.id}:`, err);
+      }
     }
 
     return rows;

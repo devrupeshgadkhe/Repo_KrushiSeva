@@ -103,6 +103,8 @@ class SQLiteDatabaseManager {
       'ALTER TABLE products ADD COLUMN cib_registration_no TEXT;',
       'ALTER TABLE products ADD COLUMN dealer_rate REAL DEFAULT 0;',
       'ALTER TABLE products ADD COLUMN active INTEGER NOT NULL DEFAULT 1;',
+      'ALTER TABLE purchases ADD COLUMN purchase_date TEXT;',
+      'UPDATE purchases SET purchase_date = invoice_date WHERE purchase_date IS NULL;',
     ];
 
     for (const sql of migrationStatements) {

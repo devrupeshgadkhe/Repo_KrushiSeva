@@ -48,10 +48,32 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
   // Business settings from database
   const [bizSettings, setBizSettings] = useState<BusinessSettings | null>(null);
 
+  // Current local month YYYY-MM
+  const getTodayMonthStr = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  };
+
   // Month selector for registers (YYYY-MM)
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    return new Date().toISOString().slice(0, 7);
-  });
+  const [selectedMonth, setSelectedMonth] = useState<string>(getTodayMonthStr);
+
+  // Month label helper (Marathi & English)
+  const getMonthDisplayName = (monthStr: string, mr: boolean) => {
+    if (!monthStr) return '';
+    const parts = monthStr.split('-');
+    const yStr = parts[0];
+    const m = parseInt(parts[1], 10) || 1;
+    const mrMonths = [
+      'जानेवारी', 'फेब्रुवारी', 'मार्च', 'एप्रिल', 'मे', 'जून',
+      'जुलै', 'ऑगस्ट', 'सप्टेंबर', 'ऑक्टोबर', 'नोव्हेंबर', 'डिसेंबर'
+    ];
+    const enMonths = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const name = mr ? mrMonths[m - 1] : enMonths[m - 1];
+    return `${name} ${yStr}`;
+  };
 
   // Data sets
   const [licences, setLicences] = useState<StatutoryLicence[]>([]);
@@ -70,20 +92,46 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
   const loadData = async () => {
     setLoading(true);
     try {
+      const parts = selectedMonth.split('-');
+      const y = parseInt(parts[0], 10) || new Date().getFullYear();
+      const m = parseInt(parts[1], 10) || (new Date().getMonth() + 1);
+      const lastDay = new Date(y, m, 0).getDate();
+      const fromDate = `${selectedMonth}-01`;
+      const toDate = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
+
       const [biz, lics, ferts, seeds, pestReg, pestStock] = await Promise.all([
-        dbService.getBusinessSettings(),
-        dbService.getLicences(),
-        dbService.getMonthlyFertilizerRegister(selectedMonth),
-        dbService.getMonthlySeedRegister(selectedMonth),
-        dbService.getPesticideRegister('', `${selectedMonth}-01`, `${selectedMonth}-31`),
-        dbService.getMonthlyPesticideStockRegister(selectedMonth),
+        dbService.getBusinessSettings().catch(err => {
+          console.error('Error fetching biz settings:', err);
+          return null;
+        }),
+        dbService.getLicences().catch(err => {
+          console.error('Error fetching licences:', err);
+          return [];
+        }),
+        dbService.getMonthlyFertilizerRegister(selectedMonth).catch(err => {
+          console.error('Error fetching fertilizer register:', err);
+          return [];
+        }),
+        dbService.getMonthlySeedRegister(selectedMonth).catch(err => {
+          console.error('Error fetching seed register:', err);
+          return [];
+        }),
+        dbService.getPesticideRegister('', fromDate, toDate).catch(err => {
+          console.error('Error fetching pesticide sales records:', err);
+          return [];
+        }),
+        dbService.getMonthlyPesticideStockRegister(selectedMonth).catch(err => {
+          console.error('Error fetching pesticide stock register:', err);
+          return [];
+        }),
       ]);
-      setBizSettings(biz);
-      setLicences(lics);
-      setFertilizerRows(ferts);
-      setSeedRows(seeds);
-      setPesticideRegister(pestReg);
-      setPesticideStockRows(pestStock);
+
+      if (biz) setBizSettings(biz);
+      setLicences(lics || []);
+      setFertilizerRows(ferts || []);
+      setSeedRows(seeds || []);
+      setPesticideRegister(pestReg || []);
+      setPesticideStockRows(pestStock || []);
     } catch (e) {
       console.error('Error loading compliance data:', e);
     } finally {
@@ -95,12 +143,21 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
     loadData();
   }, [selectedMonth]);
 
+  // Backward / Forward month navigation with pure calendar arithmetic (no UTC timezone shifting)
   const handleMonthChange = (offset: number) => {
     const parts = selectedMonth.split('-');
-    const curYear = parseInt(parts[0], 10);
-    const curMonth = parseInt(parts[1], 10);
-    const d = new Date(curYear, curMonth - 1 + offset, 1);
-    const newMonthStr = d.toISOString().slice(0, 7);
+    let curYear = parseInt(parts[0], 10) || new Date().getFullYear();
+    let curMonth = parseInt(parts[1], 10) || (new Date().getMonth() + 1);
+    curMonth += offset;
+    while (curMonth > 12) {
+      curMonth -= 12;
+      curYear += 1;
+    }
+    while (curMonth < 1) {
+      curMonth += 12;
+      curYear -= 1;
+    }
+    const newMonthStr = `${curYear}-${String(curMonth).padStart(2, '0')}`;
     setSelectedMonth(newMonthStr);
   };
 
@@ -241,26 +298,70 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
           {/* Action buttons (Month Selector, Print, Export) */}
           <div className="flex flex-wrap items-center gap-2">
             {(activeTab === 'fertilizer' || activeTab === 'seeds' || activeTab === 'pesticides') && (
-              <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200">
+              <div className="flex items-center gap-1.5 bg-slate-100/90 rounded-xl p-1 border border-slate-200">
                 <button
                   type="button"
                   onClick={() => handleMonthChange(-1)}
-                  className="p-1.5 hover:bg-white rounded-lg text-slate-600 cursor-pointer transition-colors"
+                  className="p-1.5 hover:bg-white rounded-lg text-slate-700 hover:text-slate-900 cursor-pointer transition-colors shadow-2xs hover:shadow-xs active:scale-95"
                   title={isMr ? 'मागील महिना' : 'Previous Month'}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <div className="px-2 font-mono text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{selectedMonth}</span>
-                </div>
+
+                {/* Interactive Month Picker with Native Calendar Input */}
+                <label 
+                  className="relative px-2.5 py-1 bg-white hover:bg-emerald-50/50 rounded-lg border border-slate-200 cursor-pointer flex items-center gap-2 transition-colors group"
+                  title={isMr ? 'कॅलेंडरमधून महिना निवडा' : 'Select Month from Calendar'}
+                >
+                  <Calendar className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-bold text-slate-800 tracking-wide font-sans">
+                    {getMonthDisplayName(selectedMonth, isMr)}
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                    {selectedMonth}
+                  </span>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setSelectedMonth(e.target.value);
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                </label>
+
                 <button
                   type="button"
                   onClick={() => handleMonthChange(1)}
-                  className="p-1.5 hover:bg-white rounded-lg text-slate-600 cursor-pointer transition-colors"
+                  className="p-1.5 hover:bg-white rounded-lg text-slate-700 hover:text-slate-900 cursor-pointer transition-colors shadow-2xs hover:shadow-xs active:scale-95"
                   title={isMr ? 'पुढील महिना' : 'Next Month'}
                 >
                   <ChevronRight className="w-4 h-4" />
+                </button>
+
+                {/* Quick shortcut to current month */}
+                {selectedMonth !== getTodayMonthStr() && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMonth(getTodayMonthStr())}
+                    className="px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg cursor-pointer transition-colors border border-emerald-200"
+                    title={isMr ? 'चालू महिना निवडा' : 'Jump to Current Month'}
+                  >
+                    {isMr ? 'चालू महिना' : 'Current Month'}
+                  </button>
+                )}
+
+                {/* Refresh data button */}
+                <button
+                  type="button"
+                  onClick={loadData}
+                  disabled={loading}
+                  className="p-1.5 hover:bg-white rounded-lg text-slate-600 hover:text-slate-900 cursor-pointer transition-colors"
+                  title={isMr ? 'डेटा रिफ्रेश करा' : 'Refresh Data'}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-600' : ''}`} />
                 </button>
               </div>
             )}
@@ -402,9 +503,13 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
       {!loading && activeTab === 'licences' && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {licences.map((lic) => {
-            const daysLeft = Math.ceil(
-              (new Date(lic.expiry_date).getTime() - new Date().getTime()) / (1000 * 3600 * 24)
-            );
+            let daysLeft = 999;
+            if (lic.expiry_date) {
+              const exp = new Date(lic.expiry_date).getTime();
+              if (!isNaN(exp)) {
+                daysLeft = Math.ceil((exp - Date.now()) / (1000 * 3600 * 24));
+              }
+            }
             const isNearExpiry = daysLeft <= 90 && daysLeft > 0;
             const isExpired = daysLeft <= 0;
 
@@ -488,7 +593,32 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
 
       {/* =================== TAB 2: FERTILIZER REGISTER (DOCUMENT 2) =================== */}
       {!loading && activeTab === 'fertilizer' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
+        <div className="space-y-3">
+          {/* Quick Metrics Ribbon */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 no-print">
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 block">{isMr ? 'मागील शिल्लक (Opening)' : 'Opening Stock'}</span>
+              <span className="text-sm font-bold font-mono text-slate-800">{totalFertOpening.toFixed(3)} <span className="text-xs font-normal text-slate-500">MT</span></span>
+            </div>
+            <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-emerald-800 block">{isMr ? 'चालू आवक (खरेदी)' : 'Inward (Purchases)'}</span>
+              <span className="text-sm font-bold font-mono text-emerald-800">+{totalFertInward.toFixed(3)} <span className="text-xs font-normal text-emerald-600">MT</span></span>
+            </div>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-600 block">{isMr ? 'एकूण उपलब्ध साठा' : 'Total Available'}</span>
+              <span className="text-sm font-bold font-mono text-slate-900">{(totalFertOpening + totalFertInward).toFixed(3)} <span className="text-xs font-normal text-slate-500">MT</span></span>
+            </div>
+            <div className="bg-amber-50/60 p-3 rounded-xl border border-amber-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-amber-800 block">{isMr ? 'चालू विक्री (Sales)' : 'Sales (Outward)'}</span>
+              <span className="text-sm font-bold font-mono text-amber-800">-{totalFertSales.toFixed(3)} <span className="text-xs font-normal text-amber-600">MT</span></span>
+            </div>
+            <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-200 shadow-2xs col-span-2 sm:col-span-1">
+              <span className="text-[11px] font-semibold text-blue-800 block">{isMr ? 'अखेर शिल्लक (Closing)' : 'Closing Balance'}</span>
+              <span className="text-sm font-bold font-mono text-blue-900">{totalFertClosing.toFixed(3)} <span className="text-xs font-normal text-blue-600">MT</span></span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
           {/* Statutory Formal Header for Register */}
           <div className="p-4 bg-emerald-950 text-white space-y-2 border-b border-emerald-900">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -622,11 +752,37 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {/* =================== TAB 3: SEEDS REGISTER (DOCUMENT 3) =================== */}
       {!loading && activeTab === 'seeds' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
+        <div className="space-y-3">
+          {/* Quick Metrics Ribbon */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 no-print">
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 block">{isMr ? 'मागील शिल्लक (Opening)' : 'Opening Stock'}</span>
+              <span className="text-sm font-bold font-mono text-slate-800">{totalSeedOpening.toFixed(2)}</span>
+            </div>
+            <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-emerald-800 block">{isMr ? 'चालू आवक (खरेदी)' : 'Inward (Purchases)'}</span>
+              <span className="text-sm font-bold font-mono text-emerald-800">+{totalSeedInward.toFixed(2)}</span>
+            </div>
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-600 block">{isMr ? 'एकूण उपलब्ध साठा' : 'Total Available'}</span>
+              <span className="text-sm font-bold font-mono text-slate-900">{(totalSeedOpening + totalSeedInward).toFixed(2)}</span>
+            </div>
+            <div className="bg-amber-50/60 p-3 rounded-xl border border-amber-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-amber-800 block">{isMr ? 'चालू विक्री (Sales)' : 'Sales (Outward)'}</span>
+              <span className="text-sm font-bold font-mono text-amber-800">-{totalSeedSales.toFixed(2)}</span>
+            </div>
+            <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-200 shadow-2xs col-span-2 sm:col-span-1">
+              <span className="text-[11px] font-semibold text-blue-800 block">{isMr ? 'अखेर शिल्लक (Closing)' : 'Closing Balance'}</span>
+              <span className="text-sm font-bold font-mono text-blue-900">{totalSeedClosing.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
           {/* Statutory Formal Header for Register */}
           <div className="p-4 bg-emerald-950 text-white space-y-2 border-b border-emerald-900">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -760,6 +916,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {/* =================== TAB 4: PESTICIDE REGISTER =================== */}
@@ -796,7 +953,31 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
 
           {/* Sub-view 1: Pesticide Stock Register (Inward, Outward & Balance) */}
           {pesticideSubView === 'stock' && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 no-print">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-500 block">{isMr ? 'मागील शिल्लक (Opening)' : 'Opening Stock'}</span>
+                  <span className="text-sm font-bold font-mono text-slate-800">{totalPestOpening.toFixed(2)}</span>
+                </div>
+                <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-emerald-800 block">{isMr ? 'चालू आवक (खरेदी)' : 'Inward (Purchases)'}</span>
+                  <span className="text-sm font-bold font-mono text-emerald-800">+{totalPestInward.toFixed(2)}</span>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-600 block">{isMr ? 'एकूण उपलब्ध साठा' : 'Total Available'}</span>
+                  <span className="text-sm font-bold font-mono text-slate-900">{(totalPestOpening + totalPestInward).toFixed(2)}</span>
+                </div>
+                <div className="bg-amber-50/60 p-3 rounded-xl border border-amber-200 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-amber-800 block">{isMr ? 'चालू विक्री (Sales)' : 'Sales (Outward)'}</span>
+                  <span className="text-sm font-bold font-mono text-amber-800">-{totalPestSales.toFixed(2)}</span>
+                </div>
+                <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-200 shadow-2xs col-span-2 sm:col-span-1">
+                  <span className="text-[11px] font-semibold text-blue-800 block">{isMr ? 'अखेर शिल्लक (Closing)' : 'Closing Balance'}</span>
+                  <span className="text-sm font-bold font-mono text-blue-900">{totalPestClosing.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
               <div className="p-4 bg-emerald-950 text-white font-bold text-xs flex justify-between items-center">
                 <span>{isMr ? 'कीटकनाशके आवक-जावक व साठा नोंदवही (Insecticide Stock Register)' : 'Statutory Insecticide / Agrochemical Stock Register'}</span>
                 <span className="text-[11px] text-emerald-300">
@@ -907,11 +1088,28 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
                 </div>
               </div>
             </div>
+          </div>
           )}
 
           {/* Sub-view 2: Detailed Retail Sales Register (Schedule II) */}
           {pesticideSubView === 'sales' && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 no-print">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-slate-500 block">{isMr ? 'एकूण विक्री नोंदी' : 'Total Sales Entries'}</span>
+                  <span className="text-sm font-bold font-mono text-slate-800">{pesticideRegister.length} {isMr ? 'पावत्या' : 'Invoices'}</span>
+                </div>
+                <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 shadow-2xs">
+                  <span className="text-[11px] font-semibold text-emerald-800 block">{isMr ? 'शेतकरी ग्राहक संख्या' : 'Unique Farmers'}</span>
+                  <span className="text-sm font-bold font-mono text-emerald-800">{new Set(pesticideRegister.map(r => r.farmer_name || r.customer_name)).size} {isMr ? 'शेतकरी' : 'Farmers'}</span>
+                </div>
+                <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-200 shadow-2xs col-span-2 sm:col-span-1">
+                  <span className="text-[11px] font-semibold text-blue-800 block">{isMr ? 'नोंदवही कालावधी' : 'Register Period'}</span>
+                  <span className="text-sm font-bold font-mono text-blue-900">{getMonthDisplayName(selectedMonth, isMr)}</span>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
               <div className="p-4 bg-emerald-950 text-white font-bold text-xs flex justify-between items-center">
                 <span>{isMr ? 'कीटकनाशके नियम, १९७१ - अनुसूची २ अन्वये वैधानिक नोंदवही' : 'Statutory Pesticides Register - Schedule II (Insecticide Act, 1971)'}</span>
                 <span className="text-[11px] text-emerald-300">
@@ -995,6 +1193,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
                 </div>
               </div>
             </div>
+          </div>
           )}
         </div>
       )}
