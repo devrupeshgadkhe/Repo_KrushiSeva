@@ -68,13 +68,17 @@ export default function App() {
 
   const refreshGlobalMetrics = useCallback(async () => {
     try {
-      const [cash, metrics] = await Promise.all([
+      const [cash, metrics, users] = await Promise.all([
         dbService.getCashInHand(),
         dbService.getDashboardMetrics(),
+        dbService.getUsers(),
       ]);
       setCashInHand(cash);
       setLowStockCount(metrics.low_stock_count);
       setExpiringCount(metrics.expiring_soon_count);
+      if (users && users.length > 0) {
+        setCurrentUser(users[0]);
+      }
     } catch (e) {
       console.warn('Failed to refresh global metrics', e);
     }
@@ -246,6 +250,7 @@ export default function App() {
           onLogout={() => feedback.toast(currentLang === 'mr' ? 'सध्याचे वापरकर्ता सत्र सुरक्षित आहे.' : 'User session is active and secure.', 'info')}
           onOpenGlobalSearch={() => setIsSearchOpen(true)}
           cashInHand={cashInHand}
+          onSwitchUser={setCurrentUser}
         />
 
       {/* Main Workspace Body */}

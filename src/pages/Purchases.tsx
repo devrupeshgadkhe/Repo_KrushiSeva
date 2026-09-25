@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -11,7 +11,10 @@ import {
   CheckCircle2, 
   Eye, 
   ArrowDownLeft,
-  DollarSign
+  DollarSign,
+  X,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { 
   AppLanguage, 
@@ -39,8 +42,12 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'list' | 'create'>('list');
 
-  // New Purchase Form State (Clean initial state, NO hardcoded values)
+  // New Purchase Form State
   const [selectedSupplierId, setSelectedSupplierId] = useState<number>(0);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [isSupplierOpen, setIsSupplierOpen] = useState(false);
+  const supplierRef = useRef<HTMLDivElement>(null);
+
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
@@ -51,6 +58,10 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
 
   // Add Item Row temp states
   const [selectedProdId, setSelectedProdId] = useState<number>(0);
+  const [productSearch, setProductSearch] = useState('');
+  const [isProductOpen, setIsProductOpen] = useState(false);
+  const productRef = useRef<HTMLDivElement>(null);
+
   const [batchNo, setBatchNo] = useState('');
   const [mfgDate, setMfgDate] = useState('');
   const [expDate, setExpDate] = useState('');
@@ -63,6 +74,20 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
 
   // View purchase modal
   const [viewPurchase, setViewPurchase] = useState<Purchase | null>(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (supplierRef.current && !supplierRef.current.contains(e.target as Node)) {
+        setIsSupplierOpen(false);
+      }
+      if (productRef.current && !productRef.current.contains(e.target as Node)) {
+        setIsProductOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -150,6 +175,8 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
 
     // Reset row inputs
     setSelectedProdId(0);
+    setProductSearch('');
+    setIsProductOpen(false);
     setBatchNo('');
     setMfgDate('');
     setExpDate('');
@@ -164,6 +191,34 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
   const handleRemoveItem = (idx: number) => {
     setItems(items.filter((_, i) => i !== idx));
   };
+
+  // Filtered lists for searchable autocomplete
+  const filteredSuppliers = suppliers.filter((s) => {
+    if (!supplierSearch.trim()) return true;
+    const q = supplierSearch.toLowerCase();
+    return (
+      s.name.toLowerCase().includes(q) ||
+      (s.company && s.company.toLowerCase().includes(q)) ||
+      (s.mobile && s.mobile.includes(q)) ||
+      (s.gstin && s.gstin.toLowerCase().includes(q))
+    );
+  });
+
+  const selectedSupplier = suppliers.find((s) => s.id === selectedSupplierId);
+
+  const filteredProducts = products.filter((p) => {
+    if (!productSearch.trim()) return true;
+    const q = productSearch.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.name_mr && p.name_mr.toLowerCase().includes(q)) ||
+      (p.company && p.company.toLowerCase().includes(q)) ||
+      (p.category && p.category.toLowerCase().includes(q)) ||
+      (p.pack_size && p.pack_size.toLowerCase().includes(q))
+    );
+  });
+
+  const selectedProduct = products.find((p) => p.id === selectedProdId);
 
   // Calculations
   const subtotal = items.reduce((acc, it) => acc + (it.purchase_rate * it.quantity), 0);
@@ -218,6 +273,11 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
       setItems([]);
       setSupplierInvoiceNo('');
       setSelectedSupplierId(0);
+      setSupplierSearch('');
+      setIsSupplierOpen(false);
+      setSelectedProdId(0);
+      setProductSearch('');
+      setIsProductOpen(false);
       setPaidAmount(0);
       setActiveTab('list');
       loadData();
@@ -274,22 +334,97 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 space-y-5">
           {/* Header Metadata */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
-            <div>
+            {/* Searchable Autocomplete Supplier Dropdown */}
+            <div className="relative" ref={supplierRef}>
               <label className="block font-bold text-slate-700 mb-1">
                 {getTranslation('supplier', currentLang)} *
               </label>
-              <select
-                value={selectedSupplierId}
-                onChange={(e) => setSelectedSupplierId(parseInt(e.target.value) || 0)}
-                className="w-full p-2 bg-white border border-slate-300 rounded font-medium focus:outline-emerald-600"
-              >
-                <option value={0}>-- {getTranslation('select_supplier', currentLang)} --</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.company})
-                  </option>
-                ))}
-              </select>
+
+              {selectedSupplier ? (
+                <div className="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-300 rounded-lg text-xs shadow-2xs">
+                  <div className="min-w-0 pr-2">
+                    <span className="font-bold text-emerald-950 block truncate">
+                      {selectedSupplier.name}
+                    </span>
+                    <span className="text-[11px] text-emerald-700 truncate block">
+                      {selectedSupplier.company || (currentLang === 'mr' ? 'पुरवठादार' : 'Supplier')} {selectedSupplier.mobile ? `• ${selectedSupplier.mobile}` : ''}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSupplierId(0);
+                      setSupplierSearch('');
+                      setIsSupplierOpen(true);
+                    }}
+                    className="p-1 hover:bg-emerald-200/70 rounded text-emerald-800 hover:text-emerald-950 cursor-pointer shrink-0"
+                    title={currentLang === 'mr' ? 'दुसरा पुरवठादार निवडा' : 'Change Supplier'}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="relative flex items-center">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={supplierSearch}
+                      onChange={(e) => {
+                        setSupplierSearch(e.target.value);
+                        setIsSupplierOpen(true);
+                      }}
+                      onFocus={() => setIsSupplierOpen(true)}
+                      placeholder={currentLang === 'mr' ? 'नाव किंवा कंपनीने शोधा...' : 'Search name or company...'}
+                      className="w-full pl-8 pr-7 py-2 bg-white border border-slate-300 rounded text-xs font-medium focus:outline-emerald-600 focus:border-emerald-600 shadow-2xs"
+                    />
+                    {supplierSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSupplierSearch('');
+                          setIsSupplierOpen(false);
+                        }}
+                        className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {isSupplierOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                      {filteredSuppliers.length > 0 ? (
+                        filteredSuppliers.map((s) => (
+                          <div
+                            key={s.id}
+                            onClick={() => {
+                              setSelectedSupplierId(s.id);
+                              setSupplierSearch('');
+                              setIsSupplierOpen(false);
+                            }}
+                            className="p-2.5 hover:bg-emerald-50 cursor-pointer transition-colors flex items-center justify-between"
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="font-bold text-slate-900 text-xs truncate">{s.name}</div>
+                              <div className="text-[11px] text-slate-500 truncate">
+                                {s.company} {s.mobile ? `• ${s.mobile}` : ''}
+                              </div>
+                            </div>
+                            <span className="text-[11px] font-mono font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                              {formatINR(s.current_balance || 0)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-3 text-center text-slate-400 text-xs">
+                          {currentLang === 'mr' ? 'कोणताही पुरवठादार सापडला नाही' : 'No suppliers found'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -343,22 +478,105 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
-              <div className="col-span-2">
+              {/* Searchable Autocomplete Product Dropdown */}
+              <div className="col-span-2 relative" ref={productRef}>
                 <label className="block text-[11px] font-semibold text-slate-600 mb-0.5">
-                  {getTranslation('product', currentLang)}:
+                  {getTranslation('product', currentLang)}: *
                 </label>
-                <select
-                  value={selectedProdId}
-                  onChange={(e) => setSelectedProdId(parseInt(e.target.value) || 0)}
-                  className="w-full p-1.5 bg-white border border-slate-300 rounded text-xs"
-                >
-                  <option value={0}>-- {getTranslation('select_product', currentLang)} --</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {currentLang === 'mr' && p.name_mr ? p.name_mr : p.name} ({p.pack_size})
-                    </option>
-                  ))}
-                </select>
+
+                {selectedProduct ? (
+                  <div className="flex items-center justify-between p-1.5 bg-emerald-50 border border-emerald-300 rounded text-xs shadow-2xs">
+                    <div className="min-w-0 pr-1">
+                      <span className="font-bold text-emerald-950 block truncate">
+                        {currentLang === 'mr' && selectedProduct.name_mr ? selectedProduct.name_mr : selectedProduct.name}
+                      </span>
+                      <span className="text-[10px] text-emerald-700 block truncate">
+                        {selectedProduct.pack_size} {selectedProduct.company ? `• ${selectedProduct.company}` : ''}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProdId(0);
+                        setProductSearch('');
+                        setIsProductOpen(true);
+                      }}
+                      className="p-0.5 hover:bg-emerald-200/70 rounded text-emerald-800 hover:text-emerald-950 cursor-pointer shrink-0"
+                      title={currentLang === 'mr' ? 'दुसरे उत्पादन निवडा' : 'Change Product'}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="relative flex items-center">
+                      <Search className="w-3 h-3 absolute left-2 text-slate-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={productSearch}
+                        onChange={(e) => {
+                          setProductSearch(e.target.value);
+                          setIsProductOpen(true);
+                        }}
+                        onFocus={() => setIsProductOpen(true)}
+                        placeholder={currentLang === 'mr' ? 'उत्पादन नाव किंवा पॅकने शोधा...' : 'Search product or pack size...'}
+                        className="w-full pl-6 pr-6 py-1.5 bg-white border border-slate-300 rounded text-xs focus:outline-emerald-600 focus:border-emerald-600"
+                      />
+                      {productSearch && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProductSearch('');
+                            setIsProductOpen(false);
+                          }}
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {isProductOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                        {filteredProducts.length > 0 ? (
+                          filteredProducts.map((p) => (
+                            <div
+                              key={p.id}
+                              onClick={() => {
+                                setSelectedProdId(p.id);
+                                setPurchaseRate(p.purchase_rate);
+                                setMrp(p.mrp);
+                                setSellingRate(p.selling_rate);
+                                setProductSearch('');
+                                setIsProductOpen(false);
+                              }}
+                              className="p-2 hover:bg-emerald-50 cursor-pointer transition-colors"
+                            >
+                              <div className="font-bold text-slate-900 text-xs flex items-center justify-between">
+                                <span className="truncate">
+                                  {currentLang === 'mr' && p.name_mr ? p.name_mr : p.name}
+                                </span>
+                                <span className="text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono shrink-0 ml-1">
+                                  {p.pack_size}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 flex items-center justify-between mt-0.5">
+                                <span className="truncate">{p.company || p.category}</span>
+                                <span className="font-mono font-medium text-emerald-700 shrink-0 ml-1">
+                                  दर: {formatINR(p.purchase_rate)}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-3 text-center text-slate-400 text-xs">
+                            {currentLang === 'mr' ? 'कोणतेही उत्पादन सापडले नाही' : 'No products found'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>

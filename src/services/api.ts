@@ -918,13 +918,36 @@ export const dbService = {
   },
 
   // ================= PURCHASES =================
-  async createPurchase(purchase: Omit<Purchase, 'id' | 'created_at'>, userName = 'Admin'): Promise<number> {
+  async createPurchase(purchase: any, userName = 'Admin'): Promise<number> {
     await sqliteEngine.getDb();
     return sqliteEngine.transaction(() => {
       // 1. Generate unique purchase number
       const lastPur = sqliteEngine.queryOne<{ max_id: number }>('SELECT MAX(id) as max_id FROM purchases');
       const nextNum = 1001 + (lastPur?.max_id || 0);
-      const purchaseNo = `PUR-2026-${String(nextNum).padStart(5, '0')}`;
+      const purchaseNo = purchase.purchase_no && String(purchase.purchase_no).trim() 
+        ? String(purchase.purchase_no).trim() 
+        : `PUR-2026-${String(nextNum).padStart(5, '0')}`;
+
+      // Harmonize field variations between form state and database schema
+      const invoiceDate = purchase.invoice_date || purchase.purchase_date || new Date().toISOString().split('T')[0];
+      const paymentType = purchase.payment_type || purchase.payment_mode || 'Credit';
+      const subtotal = Number(purchase.subtotal) || Number(purchase.taxable_amount) || 0;
+      const discountAmount = Number(purchase.discount_amount) || 0;
+      const taxableAmount = Number(purchase.taxable_amount) || subtotal;
+      const cgstAmount = Number(purchase.cgst_amount) || 0;
+      const sgstAmount = Number(purchase.sgst_amount) || 0;
+      const igstAmount = Number(purchase.igst_amount) || 0;
+      const totalTax = Number(purchase.total_tax) || (cgstAmount + sgstAmount + igstAmount);
+      const otherCharges = Number(purchase.other_charges) || 0;
+      const grandTotal = Number(purchase.grand_total) || Math.round(taxableAmount + totalTax);
+      const paidAmount = Number(purchase.paid_amount) || 0;
+      const creditAmount = purchase.credit_amount !== undefined 
+        ? Number(purchase.credit_amount) 
+        : (purchase.balance_amount !== undefined ? Number(purchase.balance_amount) : Math.max(0, grandTotal - paidAmount));
+      const supplierInvoiceNo = (purchase.supplier_invoice_no || '').trim();
+      const supplierName = (purchase.supplier_name || '').trim();
+      const supplierId = Number(purchase.supplier_id) || 0;
+      const notes = purchase.notes ? String(purchase.notes).trim() : '';
 
       // 2. Insert Purchase Header
       const purRes = sqliteEngine.run(
@@ -935,11 +958,11 @@ export const dbService = {
           status, notes, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Completed', ?, datetime('now'))`,
         [
-          purchaseNo, purchase.supplier_invoice_no, purchase.invoice_date, purchase.supplier_id,
-          purchase.supplier_name, purchase.payment_type, purchase.subtotal, purchase.discount_amount,
-          purchase.taxable_amount, purchase.cgst_amount, purchase.sgst_amount, purchase.igst_amount,
-          purchase.total_tax, purchase.other_charges, purchase.grand_total, purchase.paid_amount,
-          purchase.credit_amount, purchase.notes || ''
+          purchaseNo, supplierInvoiceNo, invoiceDate, supplierId,
+          supplierName, paymentType, subtotal, discountAmount,
+          taxableAmount, cgstAmount, sgstAmount, igstAmount,
+          totalTax, otherCharges, grandTotal, paidAmount,
+          creditAmount, notes
         ]
       );
       const purchaseId = purRes.lastInsertRowid;
@@ -947,6 +970,21 @@ export const dbService = {
       // 3. Process each purchase item: Create / Update Batch, Increase Stock, Record Stock Movement
       if (purchase.items && purchase.items.length) {
         for (const item of purchase.items) {
+          const qty = Number(item.quantity) || 0;
+          const freeQty = Number(item.free_qty ?? item.free_quantity) || 0;
+          const purchaseRate = Number(item.purchase_rate) || 0;
+          const mrp = Number(item.mrp) || purchaseRate;
+          const sellingRate = Number(item.selling_rate) || mrp;
+          const discountPercent = Number(item.discount_percent) || 0;
+          const taxableVal = item.taxable_value !== undefined ? Number(item.taxable_value) : (item.taxable_amount !== undefined ? Number(item.taxable_amount) : (purchaseRate * qty));
+          const gstRate = Number(item.gst_rate) || 0;
+          const cgst = Number(item.cgst_amount) || 0;
+          const sgst = Number(item.sgst_amount) || 0;
+          const igst = Number(item.igst_amount) || 0;
+          const itemTax = Number(item.total_tax) || (cgst + sgst + igst);
+          const totalAmt = Number(item.total_amount) || (taxableVal + itemTax);
+          const batchNo = (item.batch_number || 'DEFAULT').trim().toUpperCase();
+
           sqliteEngine.run(
             `INSERT INTO purchase_items (
               purchase_id, product_id, product_name, batch_number, mfg_date, expiry_date, 
@@ -954,20 +992,20 @@ export const dbService = {
               taxable_value, gst_rate, cgst_amount, sgst_amount, igst_amount, total_tax, total_amount
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-              purchaseId, item.product_id, item.product_name, item.batch_number, item.mfg_date || '',
-              item.expiry_date || '', item.quantity, item.free_qty || 0, item.unit, item.purchase_rate,
-              item.mrp, item.selling_rate, item.discount_percent || 0, item.taxable_value,
-              item.gst_rate, item.cgst_amount, item.sgst_amount, item.igst_amount || 0,
-              item.total_tax, item.total_amount
+              purchaseId, Number(item.product_id), item.product_name || '', batchNo, item.mfg_date || '',
+              item.expiry_date || '', qty, freeQty, item.unit || 'Nos', purchaseRate,
+              mrp, sellingRate, discountPercent, taxableVal,
+              gstRate, cgst, sgst, igst,
+              itemTax, totalAmt
             ]
           );
 
-          const totalQty = item.quantity + (item.free_qty || 0);
+          const totalQty = qty + freeQty;
 
           // Find if batch exists for this product
           let existingBatch = sqliteEngine.queryOne<ProductBatch>(
             'SELECT * FROM product_batches WHERE product_id = ? AND batch_number = ?',
-            [item.product_id, item.batch_number]
+            [item.product_id, batchNo]
           );
 
           let batchId = 0;
@@ -975,7 +1013,7 @@ export const dbService = {
             batchId = existingBatch.id;
             sqliteEngine.run(
               'UPDATE product_batches SET current_qty = current_qty + ?, purchase_rate = ?, mrp = ?, selling_rate = ? WHERE id = ?',
-              [totalQty, item.purchase_rate, item.mrp, item.selling_rate, batchId]
+              [totalQty, purchaseRate, mrp, sellingRate, batchId]
             );
           } else {
             const batchRes = sqliteEngine.run(
@@ -984,8 +1022,8 @@ export const dbService = {
                 opening_qty, current_qty, location_id, supplier_id, status
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'Active')`,
               [
-                item.product_id, item.batch_number, item.mfg_date || '', item.expiry_date || '',
-                item.purchase_rate, item.mrp, item.selling_rate, totalQty, totalQty, purchase.supplier_id
+                item.product_id, batchNo, item.mfg_date || '', item.expiry_date || '',
+                purchaseRate, mrp, sellingRate, totalQty, totalQty, supplierId
               ]
             );
             batchId = batchRes.lastInsertRowid;
@@ -997,38 +1035,38 @@ export const dbService = {
               date_time, product_id, product_name, batch_id, batch_number, movement_type, 
               quantity, unit, reference_type, reference_id, location_name, user_name, reason
             ) VALUES (datetime('now'), ?, ?, ?, ?, 'Purchase', ?, ?, 'Purchase', ?, 'Main Shop', ?, 'Purchase Inward')`,
-            [item.product_id, item.product_name, batchId, item.batch_number, totalQty, item.unit, purchaseNo, userName]
+            [item.product_id, item.product_name, batchId, batchNo, totalQty, item.unit || 'Nos', purchaseNo, userName]
           );
         }
       }
 
       // 4. Update Supplier Payable Balance and Ledger
-      if (purchase.credit_amount > 0 && purchase.supplier_id) {
-        const supp = sqliteEngine.queryOne<Supplier>('SELECT current_balance FROM suppliers WHERE id = ?', [purchase.supplier_id]);
-        const newBal = (supp?.current_balance || 0) + purchase.credit_amount;
-        sqliteEngine.run('UPDATE suppliers SET current_balance = ? WHERE id = ?', [newBal, purchase.supplier_id]);
+      if (creditAmount > 0 && supplierId > 0) {
+        const supp = sqliteEngine.queryOne<Supplier>('SELECT current_balance FROM suppliers WHERE id = ?', [supplierId]);
+        const newBal = (supp?.current_balance || 0) + creditAmount;
+        sqliteEngine.run('UPDATE suppliers SET current_balance = ? WHERE id = ?', [newBal, supplierId]);
 
         sqliteEngine.run(
           `INSERT INTO supplier_ledger (
             supplier_id, date, reference_type, reference_no, description, debit, credit, balance, created_at
           ) VALUES (?, ?, 'Credit Purchase', ?, ?, 0, ?, ?, datetime('now'))`,
-          [purchase.supplier_id, purchase.invoice_date, purchaseNo, `खरेदी बिल क्र. ${purchase.supplier_invoice_no}`, purchase.credit_amount, newBal]
+          [supplierId, invoiceDate, purchaseNo, `खरेदी बिल क्र. ${supplierInvoiceNo}`, creditAmount, newBal]
         );
       }
 
       // 5. Deduct Cash if cash payment made
-      if (purchase.paid_amount > 0 && purchase.payment_type === 'Cash') {
+      if (paidAmount > 0 && paymentType === 'Cash') {
         const lastCash = sqliteEngine.queryOne<{ balance_after: number }>('SELECT balance_after FROM cash_transactions ORDER BY id DESC LIMIT 1');
-        const newCashBal = (lastCash?.balance_after || 0) - purchase.paid_amount;
+        const newCashBal = (lastCash?.balance_after || 0) - paidAmount;
         sqliteEngine.run(
           `INSERT INTO cash_transactions (
             date_time, type, category, amount, balance_after, reference_id, description, user_name
           ) VALUES (datetime('now'), 'OUT', 'Cash Purchase', ?, ?, ?, ?, ?)`,
-          [purchase.paid_amount, newCashBal, purchaseNo, `खरेदी अदा ${purchase.supplier_name}`, userName]
+          [paidAmount, newCashBal, purchaseNo, `खरेदी अदा ${supplierName}`, userName]
         );
       }
 
-      this.logAudit(userName, 'CREATE_PURCHASE', 'Purchase', purchaseNo, `Purchase entry ${purchaseNo} from ${purchase.supplier_name} of ${purchase.grand_total}`);
+      this.logAudit(userName, 'CREATE_PURCHASE', 'Purchase', purchaseNo, `Purchase entry ${purchaseNo} from ${supplierName} of ${grandTotal}`);
       return purchaseId;
     });
   },
@@ -1044,7 +1082,16 @@ export const dbService = {
     }
     sql += ' ORDER BY id DESC LIMIT ?';
     params.push(limit);
-    return sqliteEngine.query<Purchase>(sql, params);
+    const rows = sqliteEngine.query<any>(sql, params);
+    return rows.map((p) => ({
+      ...p,
+      purchase_date: p.invoice_date || p.purchase_date,
+      invoice_date: p.invoice_date || p.purchase_date,
+      payment_mode: p.payment_type || p.payment_mode,
+      payment_type: p.payment_type || p.payment_mode,
+      balance_amount: p.credit_amount ?? p.balance_amount ?? Math.max(0, (p.grand_total || 0) - (p.paid_amount || 0)),
+      credit_amount: p.credit_amount ?? p.balance_amount ?? Math.max(0, (p.grand_total || 0) - (p.paid_amount || 0)),
+    }));
   },
 
   async getPurchaseById(id: number): Promise<Purchase | null> {
@@ -2163,7 +2210,7 @@ export const dbService = {
   },
 
   // ================= SYSTEM HARD RESET =================
-  async hardResetDatabase(options: { wipeProducts?: boolean; wipeCustomers?: boolean; wipeSuppliers?: boolean } = {}) {
+  async hardResetDatabase(options: any = {}) {
     return sqliteEngine.hardResetDatabase(options);
   }
 };

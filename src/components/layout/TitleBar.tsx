@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sprout, 
   Search, 
@@ -13,7 +13,10 @@ import {
   Clock,
   RefreshCw,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  ChevronDown,
+  Check,
+  Shield
 } from 'lucide-react';
 import { AppLanguage, User } from '../../types';
 import { getTranslation } from '../../i18n';
@@ -28,6 +31,7 @@ interface TitleBarProps {
   onLogout: () => void;
   onOpenGlobalSearch: () => void;
   cashInHand: number;
+  onSwitchUser?: (user: User) => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -37,9 +41,54 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onLogout,
   onOpenGlobalSearch,
   cashInHand,
+  onSwitchUser,
 }) => {
   const [timeStr, setTimeStr] = useState('');
   const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+  const [dbUser, setDbUser] = useState<User | null>(currentUser);
+  const [allDbUsers, setAllDbUsers] = useState<User[]>([]);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Sync with prop when passed
+  useEffect(() => {
+    if (currentUser) {
+      setDbUser(currentUser);
+    }
+  }, [currentUser]);
+
+  // Always load directly from SQLite database to guarantee fresh DB values
+  useEffect(() => {
+    let isMounted = true;
+    const loadDbUsers = async () => {
+      try {
+        const users = await dbService.getUsers();
+        if (isMounted && users && users.length > 0) {
+          setAllDbUsers(users);
+          if (!currentUser) {
+            setDbUser(users[0]);
+          }
+        }
+      } catch (e) {
+        console.warn('Error loading users in TitleBar:', e);
+      }
+    };
+    loadDbUsers();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  // Close user dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const unsub = updateService.subscribe(setUpdateState);
@@ -62,6 +111,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const activeUser = dbUser || currentUser;
 
   return (
     <header className="h-13 bg-emerald-900 text-white flex items-center justify-between px-3 select-none border-b border-emerald-950/40 shadow-sm z-30">
@@ -171,24 +222,89 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </button>
         </div>
 
-        {/* User Info & Logout */}
-        {currentUser && (
-          <div className="flex items-center gap-2 pl-1 border-l border-emerald-800">
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-semibold text-white leading-tight">
-                {currentUser.name}
-              </div>
-              <div className="text-[10px] text-emerald-300/80 uppercase">
-                {currentUser.role}
-              </div>
-            </div>
-            <button
-              onClick={onLogout}
-              title={getTranslation('logout', currentLang)}
-              className="p-1.5 rounded-md hover:bg-emerald-800 text-emerald-200 hover:text-red-300 transition-colors cursor-pointer"
+        {/* User Info & Database Profile Switcher */}
+        {activeUser && (
+          <div className="relative pl-1 border-l border-emerald-800" ref={userMenuRef}>
+            <div 
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-emerald-800/60 cursor-pointer transition-colors"
+              title={currentLang === 'mr' ? 'डेटाबेस वापरकर्ता खाते' : 'Database User Account'}
             >
-              <LogOut className="w-4 h-4" />
-            </button>
+              <div className="w-7 h-7 rounded-full bg-emerald-700/80 border border-emerald-500/50 flex items-center justify-center text-white shrink-0">
+                <UserIcon className="w-3.5 h-3.5 text-emerald-200" />
+              </div>
+              <div className="text-right hidden sm:block">
+                <div className="text-xs font-semibold text-white leading-tight">
+                  {activeUser.name}
+                </div>
+                <div className="text-[10px] text-emerald-300/80 uppercase font-mono">
+                  {activeUser.role}
+                </div>
+              </div>
+              <ChevronDown className={`w-3.5 h-3.5 text-emerald-300 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+            </div>
+
+            {/* User Dropdown Menu */}
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 text-slate-800 p-2 z-50 animate-in fade-in">
+                <div className="p-2 border-b border-slate-100 bg-slate-50 rounded-lg mb-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                    {currentLang === 'mr' ? 'सक्रिय वापरकर्ता खाते (SQLite)' : 'Active SQLite User Account'}
+                  </div>
+                  <div className="font-bold text-xs text-slate-900 mt-0.5">{activeUser.name}</div>
+                  <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                    <span className="font-mono">@{activeUser.username}</span>
+                    <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold uppercase">
+                      {activeUser.role}
+                    </span>
+                  </div>
+                </div>
+
+                {allDbUsers.length > 1 && (
+                  <div className="py-1">
+                    <div className="text-[10px] font-bold text-slate-400 px-2 py-1 uppercase">
+                      {currentLang === 'mr' ? 'वापरकर्ता बदला (Switch User):' : 'Switch Database User:'}
+                    </div>
+                    {allDbUsers.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => {
+                          setDbUser(u);
+                          onSwitchUser?.(u);
+                          setShowUserMenu(false);
+                        }}
+                        className={`w-full text-left px-2 py-1.5 rounded-lg text-xs flex items-center justify-between hover:bg-slate-100 transition-colors cursor-pointer ${
+                          u.id === activeUser.id ? 'bg-emerald-50 text-emerald-900 font-bold' : 'text-slate-700'
+                        }`}
+                      >
+                        <div>
+                          <div>{u.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">@{u.username} • {u.role}</div>
+                        </div>
+                        {u.id === activeUser.id && (
+                          <Check className="w-4 h-4 text-emerald-600" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="pt-1 mt-1 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      onLogout();
+                    }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-rose-600 hover:bg-rose-50 font-semibold cursor-pointer transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{getTranslation('logout', currentLang)}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -40,14 +40,39 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Hard Reset Modal State
+  // Hard Reset Modal State - Full Granular Table Selection
   const [showResetModal, setShowResetModal] = useState(false);
+  const [wipeSales, setWipeSales] = useState(true);
+  const [wipePurchases, setWipePurchases] = useState(true);
+  const [wipeStock, setWipeStock] = useState(true);
   const [wipeProducts, setWipeProducts] = useState(true);
-  const [wipeCustomers, setWipeCustomers] = useState(false);
-  const [wipeSuppliers, setWipeSuppliers] = useState(false);
+  const [wipeCustomers, setWipeCustomers] = useState(true);
+  const [wipeSuppliers, setWipeSuppliers] = useState(true);
+  const [wipeExpenses, setWipeExpenses] = useState(true);
+  const [wipeCash, setWipeCash] = useState(true);
+  const [wipePesticides, setWipePesticides] = useState(true);
+  const [wipeAuditLogs, setWipeAuditLogs] = useState(true);
   const [confirmedCheck, setConfirmedCheck] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
   const [resetting, setResetting] = useState(false);
+
+  const areAllTablesSelected = 
+    wipeSales && wipePurchases && wipeStock && wipeProducts && 
+    wipeCustomers && wipeSuppliers && wipeExpenses && wipeCash && 
+    wipePesticides && wipeAuditLogs;
+
+  const handleToggleSelectAll = (checked: boolean) => {
+    setWipeSales(checked);
+    setWipePurchases(checked);
+    setWipeStock(checked);
+    setWipeProducts(checked);
+    setWipeCustomers(checked);
+    setWipeSuppliers(checked);
+    setWipeExpenses(checked);
+    setWipeCash(checked);
+    setWipePesticides(checked);
+    setWipeAuditLogs(checked);
+  };
 
   // Desktop App & Update State
   const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
@@ -240,17 +265,35 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
       return;
     }
 
+    const anySelected = 
+      wipeSales || wipePurchases || wipeStock || wipeProducts || 
+      wipeCustomers || wipeSuppliers || wipeExpenses || wipeCash || 
+      wipePesticides || wipeAuditLogs;
+
+    if (!anySelected) {
+      showToast(isMr ? 'कृपया रीसेट करण्यासाठी किमान एक टेबल निवडा.' : 'Please select at least one table to wipe.', 'warning');
+      return;
+    }
+
     setResetting(true);
     try {
       await dbService.hardResetDatabase({
+        wipeAll: areAllTablesSelected,
+        wipeSales,
+        wipePurchases,
+        wipeStock,
         wipeProducts,
         wipeCustomers,
         wipeSuppliers,
+        wipeExpenses,
+        wipeCashTransactions: wipeCash,
+        wipePesticides,
+        wipeAuditLogs,
       });
       showToast(
         isMr 
-          ? 'हार्ड रीसेट यशस्वीरित्या पूर्ण झाले. निवडलेला डेटा नष्ट करण्यात आला आहे.' 
-          : 'Hard reset completed successfully. Selected data has been wiped.', 
+          ? 'हार्ड रीसेट यशस्वीरित्या पूर्ण झाले. निवडलेला सर्व डेटा डेटाबेसमधून नष्ट करण्यात आला आहे.' 
+          : 'Hard reset completed successfully. Selected data has been completely wiped.', 
         'success'
       );
       setShowResetModal(false);
@@ -262,7 +305,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
         window.location.reload();
       }, 1000);
     } catch (err: any) {
-      showToast((isMr ? 'रीसेट करताना त्रुटी आली: ' : 'Error during hard reset: ') + err.message, 'error');
+      showToast((isMr ? 'रीसेट करताना त्रुटी आली: ' : 'Error during hard reset: ') + (err.message || 'Error'), 'error');
     } finally {
       setResetting(false);
     }
@@ -1053,32 +1096,53 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
               </div>
 
               <div className="space-y-2">
-                <span className="font-bold text-slate-800 block">
-                  {isMr ? 'कोणता डेटा डिलीट करायचा ते निवडा:' : 'Select data to delete:'}
-                </span>
-
-                <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 block">
+                    {isMr ? 'कोणता डेटा डिलीट करायचा ते निवडा:' : 'Select tables/data to delete:'}
+                  </span>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
                     <input
                       type="checkbox"
-                      checked={true}
-                      disabled
-                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                      checked={areAllTablesSelected}
+                      onChange={(e) => handleToggleSelectAll(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-rose-600 border-slate-300"
                     />
-                    <span>{isMr ? 'विक्री नोंदी व बिले (Sales & Invoices) [अनिवार्य]' : 'Sales Invoices & Line Items [Mandatory]'}</span>
+                    <span>{isMr ? 'सर्व टेबल्स निवडा (Select All)' : 'Select All Tables'}</span>
                   </label>
+                </div>
 
-                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200 max-h-56 overflow-y-auto">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800 hover:bg-slate-100/70 p-1 rounded">
                     <input
                       type="checkbox"
-                      checked={true}
-                      disabled
+                      checked={wipeSales}
+                      onChange={(e) => setWipeSales(e.target.checked)}
                       className="w-4 h-4 rounded text-rose-600 border-slate-300"
                     />
-                    <span>{isMr ? 'साठा, बॅचेस व लेजर (Inventory & Stock Ledger) [अनिवार्य]' : 'Inventory Batches & Stock Ledger [Mandatory]'}</span>
+                    <span>{isMr ? 'विक्री नोंदी, बिले व परतावा (Sales Invoices & Returns)' : 'Sales Invoices & Line Items'}</span>
                   </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800 hover:bg-slate-100/70 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={wipePurchases}
+                      onChange={(e) => setWipePurchases(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'खरेदी नोंदी व पुरवठादार बिले (Purchases & Items)' : 'Purchases & Purchase Items'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800 hover:bg-slate-100/70 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={wipeStock}
+                      onChange={(e) => setWipeStock(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'साठा, बॅचेस व हालचाली (Product Batches & Stock Movements)' : 'Product Batches & Stock Movements'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-800 hover:bg-slate-100/70 p-1 rounded">
                     <input
                       type="checkbox"
                       checked={wipeProducts}
@@ -1088,24 +1152,64 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
                     <span>{isMr ? 'उत्पादने मास्टर डेटा (Products Master Catalog)' : 'Products Master Catalog'}</span>
                   </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 hover:bg-slate-100/70 p-1 rounded">
                     <input
                       type="checkbox"
                       checked={wipeCustomers}
                       onChange={(e) => setWipeCustomers(e.target.checked)}
                       className="w-4 h-4 rounded text-rose-600 border-slate-300"
                     />
-                    <span>{isMr ? 'शेतकरी / ग्राहक खाती (Farmers & Customer Khata)' : 'Farmers & Customer Khata'}</span>
+                    <span>{isMr ? 'शेतकरी / ग्राहक खाती (Farmers & Customer Khata / Ledger)' : 'Farmers & Customer Ledger'}</span>
                   </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 hover:bg-slate-100/70 p-1 rounded">
                     <input
                       type="checkbox"
                       checked={wipeSuppliers}
                       onChange={(e) => setWipeSuppliers(e.target.checked)}
                       className="w-4 h-4 rounded text-rose-600 border-slate-300"
                     />
-                    <span>{isMr ? 'सप्लायर खाती व खरेदी (Suppliers & Purchases)' : 'Suppliers & Purchases'}</span>
+                    <span>{isMr ? 'सप्लायर खाती व लेजर (Suppliers & Supplier Ledger)' : 'Suppliers & Supplier Ledger'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 hover:bg-slate-100/70 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={wipeExpenses}
+                      onChange={(e) => setWipeExpenses(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'दैनिक खर्च नोंदी (Daily Expenses)' : 'Daily Expenses'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 hover:bg-slate-100/70 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={wipeCash}
+                      onChange={(e) => setWipeCash(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'रोख व्यवहार (Cash In / Out Transactions)' : 'Cash In / Out Transactions'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 hover:bg-slate-100/70 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={wipePesticides}
+                      onChange={(e) => setWipePesticides(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'कीटकनाशक विक्री नोंदी (Pesticide Sales Register)' : 'Pesticide Sales Register'}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 hover:bg-slate-100/70 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={wipeAuditLogs}
+                      onChange={(e) => setWipeAuditLogs(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 border-slate-300"
+                    />
+                    <span>{isMr ? 'सिस्टम ऑडिट व ॲक्टिव्हिटी लॉग्स (System Audit Logs)' : 'System Audit Logs'}</span>
                   </label>
                 </div>
               </div>

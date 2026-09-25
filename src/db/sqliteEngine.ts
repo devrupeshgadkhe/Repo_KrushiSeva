@@ -382,45 +382,102 @@ class SQLiteDatabaseManager {
     }
   }
 
-  public async hardResetDatabase(options: { wipeProducts?: boolean; wipeCustomers?: boolean; wipeSuppliers?: boolean } = {}): Promise<void> {
+  public async hardResetDatabase(options: {
+    wipeAll?: boolean;
+    wipeSales?: boolean;
+    wipePurchases?: boolean;
+    wipeStock?: boolean;
+    wipeProducts?: boolean;
+    wipeCustomers?: boolean;
+    wipeSuppliers?: boolean;
+    wipeExpenses?: boolean;
+    wipeCashTransactions?: boolean;
+    wipePesticides?: boolean;
+    wipeAuditLogs?: boolean;
+  } = {}): Promise<void> {
     const db = await this.getDb();
     db.run('BEGIN TRANSACTION;');
     try {
-      // Always wipe transaction & movement tables
-      db.run('DELETE FROM sale_items;');
-      db.run('DELETE FROM sales;');
-      db.run('DELETE FROM purchase_items;');
-      db.run('DELETE FROM purchases;');
-      db.run('DELETE FROM inventory_batches;');
-      db.run('DELETE FROM stock_ledger;');
-      db.run('DELETE FROM farmer_khata;');
-      db.run('DELETE FROM supplier_ledger;');
-      db.run('DELETE FROM expenses;');
-      db.run('DELETE FROM cash_drawer_logs;');
-      db.run('DELETE FROM pesticide_sales_records;');
-      db.run('DELETE FROM pesticide_stock_records;');
+      const safeDelete = (tableName: string) => {
+        try {
+          db.run(`DELETE FROM "${tableName}";`);
+          try {
+            db.run(`DELETE FROM sqlite_sequence WHERE name = '${tableName}';`);
+          } catch {}
+        } catch (err) {
+          console.warn(`[Reset] Table ${tableName} delete note:`, err);
+        }
+      };
 
-      if (options.wipeProducts !== false) {
-        db.run('DELETE FROM products;');
-      }
-      if (options.wipeCustomers !== false) {
-        db.run('DELETE FROM customer_crops;');
-        db.run('DELETE FROM customers;');
-      } else {
-        db.run('UPDATE customers SET current_balance = 0;');
-      }
-      if (options.wipeSuppliers !== false) {
-        db.run('DELETE FROM suppliers;');
-      } else {
-        db.run('UPDATE suppliers SET current_balance = 0;');
+      const isAll = !!options.wipeAll;
+
+      // 1. Sales & Invoices
+      if (isAll || options.wipeSales) {
+        safeDelete('sale_items');
+        safeDelete('sales');
+        safeDelete('sales_return_items');
+        safeDelete('sales_returns');
       }
 
-      try {
-        db.run("DELETE FROM sqlite_sequence WHERE name IN ('sales', 'sale_items', 'purchases', 'purchase_items', 'inventory_batches', 'stock_ledger', 'farmer_khata', 'supplier_ledger', 'expenses', 'pesticide_sales_records');");
-        if (options.wipeProducts !== false) db.run("DELETE FROM sqlite_sequence WHERE name = 'products';");
-        if (options.wipeCustomers !== false) db.run("DELETE FROM sqlite_sequence WHERE name = 'customers';");
-        if (options.wipeSuppliers !== false) db.run("DELETE FROM sqlite_sequence WHERE name = 'suppliers';");
-      } catch {}
+      // 2. Purchases & Purchase Items
+      if (isAll || options.wipePurchases) {
+        safeDelete('purchase_items');
+        safeDelete('purchases');
+      }
+
+      // 3. Batches & Stock Movements
+      if (isAll || options.wipeStock) {
+        safeDelete('product_batches');
+        safeDelete('stock_movements');
+      }
+
+      // 4. Products Master Catalog
+      if (isAll || options.wipeProducts) {
+        safeDelete('products');
+      }
+
+      // 5. Customers & Farmers Khata
+      if (isAll || options.wipeCustomers) {
+        safeDelete('customer_crops');
+        safeDelete('customer_payments');
+        safeDelete('customer_ledger');
+        safeDelete('customers');
+      } else if (options.wipeSales) {
+        try {
+          db.run('UPDATE customers SET current_balance = 0;');
+        } catch {}
+      }
+
+      // 6. Suppliers & Payables
+      if (isAll || options.wipeSuppliers) {
+        safeDelete('supplier_payments');
+        safeDelete('supplier_ledger');
+        safeDelete('suppliers');
+      } else if (options.wipePurchases) {
+        try {
+          db.run('UPDATE suppliers SET current_balance = 0;');
+        } catch {}
+      }
+
+      // 7. Expenses
+      if (isAll || options.wipeExpenses) {
+        safeDelete('expenses');
+      }
+
+      // 8. Cash Transactions
+      if (isAll || options.wipeCashTransactions) {
+        safeDelete('cash_transactions');
+      }
+
+      // 9. Pesticide Sales Records
+      if (isAll || options.wipePesticides) {
+        safeDelete('pesticide_sales_records');
+      }
+
+      // 10. Audit Logs
+      if (isAll || options.wipeAuditLogs) {
+        safeDelete('audit_logs');
+      }
 
       db.run('COMMIT;');
       await this.saveToIndexedDB();
