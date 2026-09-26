@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { googleDriveBackupService } from './server/backupService';
+import { handleQuotaStatus, handleParseInvoice } from './server/aiInvoiceScanner';
 
 // Load environment variables
 dotenv.config();
@@ -13,6 +14,12 @@ const isProd = process.env.NODE_ENV === 'production';
 // Support JSON & raw binary body for SQLite database syncing
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
+
+// ==========================================
+// Gemini AI Invoice Scanner & Quota Endpoints
+// ==========================================
+app.get('/api/ai/quota-status', handleQuotaStatus);
+app.post('/api/ai/parse-invoice', handleParseInvoice);
 
 // ==========================================
 // Google Drive Automatic Backup API Endpoints

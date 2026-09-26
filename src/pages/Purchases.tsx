@@ -14,7 +14,9 @@ import {
   DollarSign,
   X,
   ChevronDown,
-  Check
+  Check,
+  Sparkles,
+  Camera
 } from 'lucide-react';
 import { 
   AppLanguage, 
@@ -28,6 +30,8 @@ import { getTranslation } from '../i18n';
 import { formatINR, formatDate, exportToCSV } from '../utils/formatters';
 import { dbService } from '../services/api';
 import { useFeedback } from '../components/common/FeedbackContext';
+import { aiInvoiceService, ScannedInvoiceData } from '../services/aiInvoiceService';
+import { AiInvoiceScannerModal } from '../components/purchases/AiInvoiceScannerModal';
 
 interface PurchasesProps {
   currentLang: AppLanguage;
@@ -75,6 +79,39 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
   // View purchase modal
   const [viewPurchase, setViewPurchase] = useState<Purchase | null>(null);
 
+  // AI Bill Scanner states
+  const [aiAvailable, setAiAvailable] = useState(false);
+  const [isAiScanOpen, setIsAiScanOpen] = useState(false);
+
+  // Monitor Gemini Quota and Credit Availability
+  useEffect(() => {
+    let mounted = true;
+    const checkQuota = async () => {
+      try {
+        const status = await aiInvoiceService.checkQuotaStatus();
+        if (mounted) {
+          setAiAvailable(status.available && !status.quotaExceeded);
+        }
+      } catch {
+        if (mounted) setAiAvailable(false);
+      }
+    };
+    checkQuota();
+
+    const unsub = aiInvoiceService.subscribe((status) => {
+      if (mounted) {
+        setAiAvailable(status.available && !status.quotaExceeded);
+      }
+    });
+
+    const interval = setInterval(checkQuota, 60 * 1000);
+    return () => {
+      mounted = false;
+      unsub();
+      clearInterval(interval);
+    };
+  }, []);
+
   // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -110,6 +147,180 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
   useEffect(() => {
     loadData();
   }, []);
+
+  // Apply parsed Gemini invoice data directly to Purchase entry form
+  const handleApplyAiScannedData = async (scanned: ScannedInvoiceData) => {
+    try {
+      // 1. Switch to create tab
+      setActiveTab('create');
+
+      // 2. Set invoice number and date
+      if (scanned.invoiceNumber) {
+        setSupplierInvoiceNo(scanned.invoiceNumber);
+      }
+      if (scanned.invoiceDate) {
+        setPurchaseDate(scanned.invoiceDate);
+      }
+
+      // 3. Match or Create Supplier
+      let matchedSupp = null;
+      const cleanGstin = scanned.supplierGstin?.trim().toUpperCase();
+      if (cleanGstin) {
+        matchedSupp = suppliers.find((s) => s.gstin && s.gstin.trim().toUpperCase() === cleanGstin);
+      }
+
+      if (!matchedSupp && scanned.supplierName) {
+        const cleanName = scanned.supplierName.trim().toLowerCase();
+        matchedSupp = suppliers.find(
+          (s) =>
+            s.name.toLowerCase() === cleanName ||
+            (s.company && s.company.toLowerCase() === cleanName) ||
+            cleanName.includes(s.name.toLowerCase()) ||
+            s.name.toLowerCase().includes(cleanName)
+        );
+      }
+
+      if (matchedSupp) {
+        setSelectedSupplierId(matchedSupp.id);
+        setSupplierSearch(matchedSupp.name);
+      } else if (scanned.supplierName.trim()) {
+        // Auto-create supplier in SQLite DB
+        try {
+          const newSuppId = await dbService.createSupplier({
+            name: scanned.supplierName.trim(),
+            company: scanned.supplierName.trim(),
+            gstin: scanned.supplierGstin?.trim() || undefined,
+            address: scanned.supplierAddress?.trim() || undefined,
+            mobile: scanned.supplierPhone?.trim() || undefined,
+            email: scanned.supplierEmail?.trim() || undefined,
+            active: true,
+            opening_balance: 0,
+            current_balance: 0,
+          });
+          setSelectedSupplierId(newSuppId);
+          setSupplierSearch(scanned.supplierName.trim());
+          const updatedSupps = await dbService.getSuppliers();
+          setSuppliers(updatedSupps);
+        } catch (e) {
+          console.warn('Could not auto-create supplier, continuing:', e);
+        }
+      }
+
+      // 4. Map or auto-register products & create items
+      const newItems: PurchaseItem[] = [];
+      const currentProds = [...products];
+
+      for (const it of scanned.items) {
+        const cleanName = it.name.trim().toLowerCase();
+        let prod = currentProds.find(
+          (p) =>
+            p.name.toLowerCase() === cleanName ||
+            (p.name_mr && p.name_mr.toLowerCase() === cleanName) ||
+            cleanName.includes(p.name.toLowerCase()) ||
+            p.name.toLowerCase().includes(cleanName)
+        );
+
+        if (!prod) {
+          try {
+            const purchaseRate = it.rate > 0 ? it.rate : 100;
+            const gstRate = it.gstRate >= 0 ? it.gstRate : 18;
+            const sellingRate = Math.round(purchaseRate * 1.15);
+            const mrp = Math.round(purchaseRate * 1.25);
+            const unit = it.unit || 'PCS';
+
+            const newProdId = await dbService.createProduct({
+              name: it.name.trim(),
+              name_mr: it.name.trim(),
+              category: 'General',
+              hsn_code: it.hsn || '',
+              unit,
+              purchase_rate: purchaseRate,
+              selling_rate: sellingRate,
+              mrp,
+              gst_rate: gstRate,
+              active: true,
+            });
+
+            prod = {
+              id: newProdId,
+              name: it.name.trim(),
+              name_mr: it.name.trim(),
+              category: 'General',
+              hsn_code: it.hsn || '',
+              unit,
+              purchase_rate: purchaseRate,
+              selling_rate: sellingRate,
+              mrp,
+              gst_rate: gstRate,
+              active: true,
+              created_at: new Date().toISOString(),
+            } as unknown as Product;
+            currentProds.push(prod);
+          } catch (pe) {
+            console.warn('Error auto-creating product:', pe);
+          }
+        }
+
+        const effectiveProdId = prod?.id || 1;
+        const effectiveProdName = prod?.name || it.name;
+        const effectiveUnit = prod?.unit || it.unit || 'PCS';
+        const effectiveGstRate = it.gstRate >= 0 ? it.gstRate : (prod?.gst_rate || 0);
+        const qty = it.quantity > 0 ? it.quantity : 1;
+        const rate = it.rate > 0 ? it.rate : (prod?.purchase_rate || 0);
+        const discAmt = it.discount || 0;
+        const taxable = it.taxableAmount > 0 ? it.taxableAmount : Math.max(0, rate * qty - discAmt);
+        const totalTax = (taxable * effectiveGstRate) / 100;
+        const lineTotal = it.totalAmount > 0 ? it.totalAmount : (taxable + totalTax);
+
+        const batchNumber = it.batchNumber?.trim()
+          ? it.batchNumber.trim().toUpperCase()
+          : `BATCH-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
+
+        const expiryDate = it.expiryDate?.trim()
+          ? it.expiryDate.trim()
+          : new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0];
+
+        newItems.push({
+          product_id: effectiveProdId,
+          product_name: effectiveProdName,
+          batch_number: batchNumber,
+          mfg_date: undefined,
+          expiry_date: expiryDate,
+          quantity: qty,
+          free_qty: 0,
+          free_quantity: 0,
+          unit: effectiveUnit,
+          purchase_rate: rate,
+          mrp: prod?.mrp || Math.round(rate * 1.25),
+          selling_rate: prod?.selling_rate || Math.round(rate * 1.15),
+          discount_percent: 0,
+          taxable_value: taxable,
+          taxable_amount: taxable,
+          gst_rate: effectiveGstRate,
+          cgst_amount: totalTax / 2,
+          sgst_amount: totalTax / 2,
+          igst_amount: 0,
+          total_tax: totalTax,
+          total_amount: lineTotal,
+        });
+      }
+
+      setProducts(currentProds);
+      setItems(newItems);
+
+      showToast(
+        currentLang === 'mr'
+          ? `बिल यशस्वीरित्या स्कॅन झाले! ${newItems.length} उत्पादने खरेदी फॉर्ममध्ये भरली गेली.`
+          : `Invoice scanned successfully! ${newItems.length} items loaded into form.`,
+        'success'
+      );
+    } catch (err: any) {
+      showToast(
+        err.message || (currentLang === 'mr' ? 'माहिती भरताना अडचण आली.' : 'Error applying scanned data.'),
+        'error'
+      );
+    }
+  };
 
   // When product is selected in item row, auto-fill standard rates
   useEffect(() => {
@@ -310,6 +521,19 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Quota-Based Dynamic Scan Button */}
+          {aiAvailable && (
+            <button
+              type="button"
+              onClick={() => setIsAiScanOpen(true)}
+              className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
+              title={currentLang === 'mr' ? 'खरेदी बिल फोटो / PDF स्कॅन करा' : 'Scan Purchase Bill with AI'}
+            >
+              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+              <span>{currentLang === 'mr' ? 'बिल स्कॅन करा (AI Scan)' : 'Scan Bill (AI Scan)'}</span>
+            </button>
+          )}
+
           {activeTab === 'list' ? (
             <button
               onClick={() => setActiveTab('create')}
@@ -332,6 +556,35 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
       {activeTab === 'create' ? (
         /* =================== CREATE PURCHASE FORM =================== */
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 space-y-5">
+          {/* AI Bill Scanner Quick Banner (Only shown if AI credits/quota available) */}
+          {aiAvailable && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-emerald-50/90 border border-indigo-200/80 rounded-xl shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
+                    <span>{currentLang === 'mr' ? 'स्मार्ट खरेदी बिल स्कॅनर (Gemini Vision)' : 'Smart Bill Auto-Fill (Gemini Vision)'}</span>
+                    <span className="px-1.5 py-0.2 rounded bg-indigo-200/70 text-[10px] text-indigo-800 font-mono font-bold">AI</span>
+                  </h4>
+                  <p className="text-[11px] text-indigo-700/80">
+                    {currentLang === 'mr'
+                      ? 'खरेदी पावतीचा फोटो किंवा PDF निवडा — पुरवठादार, उत्पादने, दर आणि GST आपोआप भरले जातील.'
+                      : 'Upload invoice photo or PDF — vendor, products, rates & GST will be auto-filled.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAiScanOpen(true)}
+                className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors shrink-0"
+              >
+                <Camera className="w-3.5 h-3.5 text-amber-300" />
+                <span>{currentLang === 'mr' ? 'बिल स्कॅन करा' : 'Scan Bill Now'}</span>
+              </button>
+            </div>
+          )}
           {/* Header Metadata */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
             {/* Searchable Autocomplete Supplier Dropdown */}
@@ -919,6 +1172,17 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
           </div>
         </div>
       )}
+
+      {/* AI Invoice Scanner Modal */}
+      <AiInvoiceScannerModal
+        isOpen={isAiScanOpen}
+        onClose={() => setIsAiScanOpen(false)}
+        currentLang={currentLang}
+        suppliers={suppliers}
+        products={products}
+        onApplyData={handleApplyAiScannedData}
+        onQuotaExceeded={() => setAiAvailable(false)}
+      />
     </div>
   );
 };

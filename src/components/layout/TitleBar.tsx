@@ -18,7 +18,7 @@ import {
   Check,
   Shield
 } from 'lucide-react';
-import { AppLanguage, User } from '../../types';
+import { AppLanguage, User, BusinessSettings } from '../../types';
 import { getTranslation } from '../../i18n';
 import { formatINR } from '../../utils/formatters';
 import { dbService } from '../../services/api';
@@ -28,6 +28,7 @@ interface TitleBarProps {
   currentLang: AppLanguage;
   onLanguageChange: (lang: AppLanguage) => void;
   currentUser: User | null;
+  businessSettings?: BusinessSettings | null;
   onLogout: () => void;
   onOpenGlobalSearch: () => void;
   cashInHand: number;
@@ -38,6 +39,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   currentLang,
   onLanguageChange,
   currentUser,
+  businessSettings,
   onLogout,
   onOpenGlobalSearch,
   cashInHand,
@@ -47,35 +49,62 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
   const [dbUser, setDbUser] = useState<User | null>(currentUser);
   const [allDbUsers, setAllDbUsers] = useState<User[]>([]);
+  const [bizSettings, setBizSettings] = useState<BusinessSettings | null>(businessSettings || null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Sync with prop when passed
+  // Sync with props when passed
+  useEffect(() => {
+    if (businessSettings) {
+      setBizSettings(businessSettings);
+    }
+  }, [businessSettings]);
+
   useEffect(() => {
     if (currentUser) {
       setDbUser(currentUser);
     }
   }, [currentUser]);
 
-  // Always load directly from SQLite database to guarantee fresh DB values
+  // Load business settings and users directly from SQLite database to guarantee fresh DB values
   useEffect(() => {
     let isMounted = true;
-    const loadDbUsers = async () => {
+    const loadDbData = async () => {
       try {
-        const users = await dbService.getUsers();
-        if (isMounted && users && users.length > 0) {
-          setAllDbUsers(users);
-          if (!currentUser) {
-            setDbUser(users[0]);
+        const [users, biz] = await Promise.all([
+          dbService.getUsers().catch(() => []),
+          dbService.getBusinessSettings().catch(() => null),
+        ]);
+        if (isMounted) {
+          if (users && users.length > 0) {
+            setAllDbUsers(users);
+            if (!currentUser) {
+              setDbUser(users[0]);
+            }
+          }
+          if (biz) {
+            setBizSettings(biz);
           }
         }
       } catch (e) {
-        console.warn('Error loading users in TitleBar:', e);
+        console.warn('Error loading DB data in TitleBar:', e);
       }
     };
-    loadDbUsers();
+    loadDbData();
+
+    // Listen to profile / settings update events across app
+    const handleUpdate = () => {
+      loadDbData();
+    };
+    window.addEventListener('business-profile-updated', handleUpdate);
+    window.addEventListener('business_settings_updated', handleUpdate);
+    window.addEventListener('db-updated', handleUpdate);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('business-profile-updated', handleUpdate);
+      window.removeEventListener('business_settings_updated', handleUpdate);
+      window.removeEventListener('db-updated', handleUpdate);
     };
   }, [currentUser]);
 
@@ -114,9 +143,20 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
   const activeUser = dbUser || currentUser;
 
+  // Dynamic store name from SQLite business_settings database
+  const currentBiz = businessSettings || bizSettings;
+  const displayShopName = currentLang === 'mr'
+    ? (currentBiz?.shop_name_mr || currentBiz?.shop_name || 'श्री समर्थ कृषी सेवा केंद्र')
+    : (currentBiz?.shop_name || currentBiz?.shop_name_mr || 'Shree Samarth Krushi Seva Kendra');
+
+  // Dynamic subtitle from SQLite database
+  const displayShopSubtitle = currentBiz?.village_city
+    ? `${currentBiz.village_city}${currentBiz.district ? (currentLang === 'mr' ? `, जि. ${currentBiz.district}` : `, Dist. ${currentBiz.district}`) : ''}`
+    : (currentBiz?.address || (currentLang === 'mr' ? 'कृषी निविष्ठा विक्री व साठा व्यवस्थापन प्रणाली' : 'Agricultural Retail Management System'));
+
   return (
     <header className="h-13 bg-emerald-900 text-white flex items-center justify-between px-3 select-none border-b border-emerald-950/40 shadow-sm z-30">
-      {/* Brand & App Title */}
+      {/* Brand & Dynamic Store Title from Database */}
       <div className="flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
           <Sprout className="w-5 h-5" />
@@ -124,7 +164,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="font-bold text-sm tracking-wide text-white leading-tight">
-              {getTranslation('app_title', currentLang)}
+              {displayShopName}
             </h1>
             <span 
               className="px-1.5 py-0.2 rounded bg-emerald-950/70 border border-emerald-500/40 text-[10px] font-mono font-bold text-emerald-300 shadow-2xs"
@@ -134,7 +174,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-emerald-200/75 leading-none">
-            {getTranslation('app_subtitle', currentLang)}
+            {displayShopSubtitle}
           </p>
         </div>
       </div>

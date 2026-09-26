@@ -6,7 +6,7 @@ import {
   Database,
   CheckCircle2
 } from 'lucide-react';
-import { AppLanguage, User } from './types';
+import { AppLanguage, User, BusinessSettings } from './types';
 import { getTranslation } from './i18n';
 import { dbService } from './services/api';
 import { TitleBar } from './components/layout/TitleBar';
@@ -54,6 +54,14 @@ export default function App() {
 
   // User
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings | null>(() => {
+    try {
+      const cached = localStorage.getItem('ksk_biz_cache');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Search Modal
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -68,10 +76,11 @@ export default function App() {
 
   const refreshGlobalMetrics = useCallback(async () => {
     try {
-      const [cash, metrics, users] = await Promise.all([
+      const [cash, metrics, users, biz] = await Promise.all([
         dbService.getCashInHand(),
         dbService.getDashboardMetrics(),
         dbService.getUsers(),
+        dbService.getBusinessSettings().catch(() => null),
       ]);
       setCashInHand(cash);
       setLowStockCount(metrics.low_stock_count);
@@ -79,10 +88,31 @@ export default function App() {
       if (users && users.length > 0) {
         setCurrentUser(users[0]);
       }
+      if (biz) {
+        setBusinessSettings(biz);
+        try {
+          localStorage.setItem('ksk_biz_cache', JSON.stringify(biz));
+        } catch {}
+      }
     } catch (e) {
       console.warn('Failed to refresh global metrics', e);
     }
   }, []);
+
+  // Listen to profile / settings changes
+  useEffect(() => {
+    const handleBizUpdate = () => {
+      refreshGlobalMetrics();
+    };
+    window.addEventListener('business-profile-updated', handleBizUpdate);
+    window.addEventListener('business_settings_updated', handleBizUpdate);
+    window.addEventListener('db-updated', handleBizUpdate);
+    return () => {
+      window.removeEventListener('business-profile-updated', handleBizUpdate);
+      window.removeEventListener('business_settings_updated', handleBizUpdate);
+      window.removeEventListener('db-updated', handleBizUpdate);
+    };
+  }, [refreshGlobalMetrics]);
 
   // System Shutdown / Exit Backup Hook
   useEffect(() => {
@@ -247,6 +277,7 @@ export default function App() {
           currentLang={currentLang}
           onLanguageChange={handleLanguageChange}
           currentUser={currentUser}
+          businessSettings={businessSettings}
           onLogout={() => feedback.toast(currentLang === 'mr' ? 'सध्याचे वापरकर्ता सत्र सुरक्षित आहे.' : 'User session is active and secure.', 'info')}
           onOpenGlobalSearch={() => setIsSearchOpen(true)}
           cashInHand={cashInHand}
