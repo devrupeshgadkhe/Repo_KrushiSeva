@@ -246,21 +246,23 @@ function createWindow() {
     minHeight: 700,
     title: 'Krushi Seva ERP - कृषी सेवा केंद्र ERP',
     icon: iconPath,
+    backgroundColor: '#0f172a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
+      webSecurity: false,
+      allowRunningInsecureContent: false,
     },
     show: false,
   });
 
-  // Smooth loading
+  // Smooth loading without white flash
   const showFallback = setTimeout(() => {
     if (mainWindow && !mainWindow.isVisible()) {
       mainWindow.show();
     }
-  }, 3000);
+  }, 3500);
 
   mainWindow.once('ready-to-show', () => {
     clearTimeout(showFallback);
@@ -292,6 +294,27 @@ function createWindow() {
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
     console.error(`[Electron] Failed to load URL: ${validatedURL} (${errorCode}: ${errorDescription})`);
+    if (errorCode !== -3) {
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const indexPath = path.join(__dirname, '../dist/index.html');
+          if (fs.existsSync(indexPath)) {
+            mainWindow.loadFile(indexPath);
+          }
+        }
+      }, 1500);
+    }
+  });
+
+  mainWindow.on('unresponsive', () => {
+    console.warn('[Electron] Window became unresponsive');
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[Electron] Render process gone:', details.reason);
+    if (details.reason !== 'clean-exit' && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.reload();
+    }
   });
 
   // Open external links in default OS browser
@@ -304,7 +327,10 @@ function createWindow() {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    mainWindow.loadFile(indexPath).catch((err) => {
+      console.error('[Electron] Failed to loadFile:', err);
+    });
   }
 
   // Remove default menu for clean modern ERP look, or keep minimal
@@ -318,6 +344,29 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+// Handler for loading SQL.js WASM binary directly from filesystem in desktop app
+ipcMain.handle('get-sql-wasm-binary', async () => {
+  try {
+    const candidatePaths = [
+      path.join(__dirname, '../dist/sql-wasm.wasm'),
+      path.join(__dirname, 'sql-wasm.wasm'),
+      path.join(app.getAppPath(), 'dist/sql-wasm.wasm'),
+      path.join(app.getAppPath(), 'public/sql-wasm.wasm'),
+      process.resourcesPath ? path.join(process.resourcesPath, 'sql-wasm.wasm') : null,
+      process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked/dist/sql-wasm.wasm') : null
+    ].filter(Boolean);
+
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        return fs.readFileSync(p);
+      }
+    }
+  } catch (e) {
+    console.error('[Electron] Failed to read sql-wasm.wasm binary:', e);
+  }
+  return null;
+});
 
 // =======================
 // Electron Updater Events

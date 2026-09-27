@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendCloudBackup: (payload) => ipcRenderer.invoke('send-cloud-backup', payload),
   aiCheckQuota: () => ipcRenderer.invoke('ai-check-quota'),
   aiParseInvoice: (payload) => ipcRenderer.invoke('ai-parse-invoice', payload),
+  getSqlWasmBinary: () => ipcRenderer.invoke('get-sql-wasm-binary'),
 
   // Event Listeners from Main Process
   onUpdateChecking: (callback) => {

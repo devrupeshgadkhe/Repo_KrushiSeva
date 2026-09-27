@@ -37,9 +37,26 @@ class SQLiteDatabaseManager {
 
   private async init(): Promise<Database> {
     try {
-      const SQL = await initSqlJs({
-        locateFile: () => getSqlWasmUrl()
-      });
+      let SQL: any = null;
+
+      // 1. In Electron desktop app, load WASM binary directly through IPC without HTTP/file CORS restrictions
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.getSqlWasmBinary) {
+        try {
+          const wasmBuffer = await (window as any).electronAPI.getSqlWasmBinary();
+          if (wasmBuffer && (wasmBuffer.byteLength > 0 || wasmBuffer.length > 0)) {
+            SQL = await initSqlJs({ wasmBinary: wasmBuffer });
+          }
+        } catch (ipcWasmErr) {
+          console.warn('[DesktopApp] IPC getSqlWasmBinary fallback:', ipcWasmErr);
+        }
+      }
+
+      // 2. Fallback to locateFile (works for Web / Dev server)
+      if (!SQL) {
+        SQL = await initSqlJs({
+          locateFile: () => getSqlWasmUrl()
+        });
+      }
 
       // Try loading existing database from IndexedDB
       const savedBytes = await this.loadFromIndexedDB();
