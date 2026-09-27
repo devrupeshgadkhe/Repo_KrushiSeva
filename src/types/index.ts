@@ -8,6 +8,7 @@ export interface User {
   name: string;
   role: UserRole;
   phone?: string;
+  password_hash?: string;
   active: boolean;
   created_at: string;
 }

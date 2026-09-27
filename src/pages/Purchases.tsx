@@ -526,11 +526,11 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
             <button
               type="button"
               onClick={() => setIsAiScanOpen(true)}
-              className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95"
-              title={currentLang === 'mr' ? 'खरेदी बिल फोटो / PDF स्कॅन करा' : 'Scan Purchase Bill with AI'}
+              className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95 border border-emerald-700/60"
+              title={currentLang === 'mr' ? 'खरेदी बिल किंवा पावती स्कॅन करा' : 'Scan Purchase Invoice / Bill'}
             >
-              <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-              <span>{currentLang === 'mr' ? 'बिल स्कॅन करा (AI Scan)' : 'Scan Bill (AI Scan)'}</span>
+              <Camera className="w-4 h-4 text-emerald-300" />
+              <span>{currentLang === 'mr' ? 'बिल स्कॅन करा' : 'Scan Bill'}</span>
             </button>
           )}
 
@@ -556,19 +556,18 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
       {activeTab === 'create' ? (
         /* =================== CREATE PURCHASE FORM =================== */
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 space-y-5">
-          {/* AI Bill Scanner Quick Banner (Only shown if AI credits/quota available) */}
+          {/* Bill Scanner Quick Banner (Only shown if credits/quota available) */}
           {aiAvailable && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-emerald-50/90 border border-indigo-200/80 rounded-xl shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl shadow-2xs">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+                <div className="w-9 h-9 rounded-lg bg-emerald-800 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Camera className="w-5 h-5 text-emerald-100" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
-                    <span>{currentLang === 'mr' ? 'स्मार्ट खरेदी बिल स्कॅनर (Gemini Vision)' : 'Smart Bill Auto-Fill (Gemini Vision)'}</span>
-                    <span className="px-1.5 py-0.2 rounded bg-indigo-200/70 text-[10px] text-indigo-800 font-mono font-bold">AI</span>
+                  <h4 className="font-bold text-xs text-emerald-950 flex items-center gap-1.5">
+                    <span>{currentLang === 'mr' ? 'खरेदी पावती ऑटो-स्कॅनर' : 'Invoice Auto-Fill Scanner'}</span>
                   </h4>
-                  <p className="text-[11px] text-indigo-700/80">
+                  <p className="text-[11px] text-emerald-800/80">
                     {currentLang === 'mr'
                       ? 'खरेदी पावतीचा फोटो किंवा PDF निवडा — पुरवठादार, उत्पादने, दर आणि GST आपोआप भरले जातील.'
                       : 'Upload invoice photo or PDF — vendor, products, rates & GST will be auto-filled.'}
@@ -578,10 +577,10 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
               <button
                 type="button"
                 onClick={() => setIsAiScanOpen(true)}
-                className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors shrink-0"
+                className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors shrink-0"
               >
-                <Camera className="w-3.5 h-3.5 text-amber-300" />
-                <span>{currentLang === 'mr' ? 'बिल स्कॅन करा' : 'Scan Bill Now'}</span>
+                <Camera className="w-3.5 h-3.5 text-emerald-200" />
+                <span>{currentLang === 'mr' ? 'बिल निवडा' : 'Select Bill'}</span>
               </button>
             </div>
           )}

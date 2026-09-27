@@ -105,6 +105,7 @@ class SQLiteDatabaseManager {
       'ALTER TABLE products ADD COLUMN active INTEGER NOT NULL DEFAULT 1;',
       'ALTER TABLE purchases ADD COLUMN purchase_date TEXT;',
       'UPDATE purchases SET purchase_date = invoice_date WHERE purchase_date IS NULL;',
+      "UPDATE users SET name = (SELECT COALESCE(proprietor, owner_name, 'संचालक (Admin)') FROM business_settings WHERE id = 1) WHERE (id = 1 OR role = 'admin') AND (name LIKE '%संजय पाटील%' OR name LIKE '%Sanjay Patil%');",
     ];
 
     for (const sql of migrationStatements) {

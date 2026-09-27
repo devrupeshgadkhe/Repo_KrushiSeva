@@ -1,13 +1,13 @@
 export const SEED_DATA_SQL = `
 -- Default Users
 INSERT OR IGNORE INTO users (id, username, password_hash, name, role, phone, active, created_at) VALUES 
-(1, 'admin', 'admin123', 'संजय पाटील (Admin)', 'admin', '9822334455', 1, datetime('now')),
+(1, 'admin', 'admin123', 'संचालक (Admin)', 'admin', '9822334455', 1, datetime('now')),
 (2, 'cashier', 'cashier123', 'प्रवीण कदम (Cashier)', 'cashier', '9890112233', 1, datetime('now')),
 (3, 'manager', 'manager123', 'अमित देशमुख (Manager)', 'manager', '9763445566', 1, datetime('now'));
 
 -- Business Profile Settings
 INSERT OR REPLACE INTO business_settings (id, shop_name, shop_name_mr, proprietor, address, village_city, district, state, pincode, mobile, email, gstin, fertilizer_licence, seed_licence, pesticide_licence, bank_name, bank_account_no, bank_ifsc, upi_id) VALUES 
-(1, 'Shree Samarth Krushi Seva Kendra', 'श्री समर्थ कृषी सेवा केंद्र', 'संजय आनंदराव पाटील', 'स्टेशन रोड, मुख्य बाजारपेठ, बारामती', 'बारामती', 'पुणे', 'महाराष्ट्र', '४१३१०२', '९८२२३३४४५५', 'samarthagro.baramati@gmail.com', '27AABCS1429B1Z8', 'FL/PUN/2022/8492', 'SL/PUN/2021/4102', 'IL/PUN/2023/1932', 'Bank of Maharashtra', '60123456789', 'MAHB0000123', '9822334455@upi');
+(1, 'Krushi Seva Kendra', 'कृषी सेवा केंद्र', 'संचालक / प्रोप्रायटर', 'स्टेशन रोड, मुख्य बाजारपेठ', 'स्थानिक', 'जिल्हा', 'महाराष्ट्र', '४१३१०२', '९८२२३३४४५५', 'contact@krushiseva.com', '27AABCS1429B1Z8', 'FL/PUN/2022/8492', 'SL/PUN/2021/4102', 'IL/PUN/2023/1932', 'Bank of Maharashtra', '60123456789', 'MAHB0000123', '9822334455@upi');
 
 -- Invoice Configuration
 INSERT OR REPLACE INTO invoice_settings (id, invoice_prefix, starting_number, print_format, show_hsn, show_mrp, show_discount, terms_conditions, terms_conditions_mr, footer_message) VALUES 
@@ -129,9 +129,9 @@ INSERT OR IGNORE INTO customer_ledger (id, customer_id, date, reference_type, re
 
 -- Licences Compliance
 INSERT OR IGNORE INTO licences (id, licence_type, licence_no, holder_name, issuing_authority, issue_date, expiry_date, notes) VALUES 
-(1, 'Fertilizer', 'FL/PUN/2022/8492', 'श्री समर्थ कृषी सेवा केंद्र (संजय आनंदराव पाटील)', 'जिल्हा अधीक्षक कृषी अधिकारी, पुणे', '2022-05-10', '2027-05-09', 'खते विक्री व साठवणूक अधिकृत परवाना (Class A)'),
-(2, 'Seed', 'SL/PUN/2021/4102', 'श्री समर्थ कृषी सेवा केंद्र (संजय आनंदराव पाटील)', 'कृषी संचालक (निविष्ठा व गुणनियंत्रण), महाराष्ट्र राज्य', '2021-06-15', '2026-11-30', 'बियाणे परवाना (लवकर नूतनीकरण आवश्यक - Alert Active)'),
-(3, 'Insecticide', 'IL/PUN/2023/1932', 'श्री समर्थ कृषी सेवा केंद्र (संजय आनंदराव पाटील)', 'कृषी उपसंचालक व गुणनियंत्रण निरीक्षक, पुणे', '2023-08-01', '2028-07-31', 'कीटकनाशक व बुरशीनाशक विक्री परवाना');
+(1, 'Fertilizer', 'FL/PUN/2022/8492', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'जिल्हा अधीक्षक कृषी अधिकारी, कृषी विभाग', '2022-05-10', '2027-05-09', 'खते विक्री व साठवणूक अधिकृत परवाना (Class A)'),
+(2, 'Seed', 'SL/PUN/2021/4102', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'कृषी संचालक (निविष्ठा व गुणनियंत्रण), महाराष्ट्र राज्य', '2021-06-15', '2026-11-30', 'बियाणे परवाना (लवकर नूतनीकरण आवश्यक - Alert Active)'),
+(3, 'Insecticide', 'IL/PUN/2023/1932', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'कृषी उपसंचालक व गुणनियंत्रण निरीक्षक, कृषी विभाग', '2023-08-01', '2028-07-31', 'कीटकनाशक व बुरशीनाशक विक्री परवाना');
 
 -- Sample Initial Cash In Hand
 INSERT OR IGNORE INTO cash_transactions (id, date_time, type, category, amount, balance_after, reference_id, description, user_name) VALUES 

@@ -61,7 +61,7 @@ export async function checkQuotaStatus(force: boolean = false): Promise<{
   try {
     // Probe Gemini API with minimal token output to test connectivity and quota
     await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite',
+      model: 'gemini-3.5-flash-lite',
       contents: 'ping',
       config: {
         maxOutputTokens: 1,
@@ -157,8 +157,8 @@ export async function parseInvoiceDocument(fileBase64: string, mimeType: string)
   }
   cleanBase64 = cleanBase64.trim();
 
-  // Primary model: gemini-3.1-flash-lite (fastest, high free quota), fallback: gemini-3.8-flash
-  const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  // Primary model: gemini-3.5-flash-lite (fastest, high free quota), fallback: gemini-3.8-flash
+  const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
   let parsedData: any = null;
   let lastError: any = null;
 

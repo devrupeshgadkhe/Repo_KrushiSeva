@@ -1801,21 +1801,21 @@ export const dbService = {
     const settings = sqliteEngine.queryOne<BusinessSettings>('SELECT * FROM business_settings WHERE id = 1');
     if (!settings) {
       return {
-        shop_name: 'Shree Samarth Krushi Seva Kendra',
-        shop_name_mr: 'श्री समर्थ कृषी सेवा केंद्र',
-        proprietor: 'संजय आनंदराव पाटील',
-        owner_name: 'संजय आनंदराव पाटील',
-        partner_name: 'प्रवीण कदम',
+        shop_name: 'Krushi Seva Kendra',
+        shop_name_mr: 'कृषी सेवा केंद्र',
+        proprietor: 'संचालक / प्रोप्रायटर',
+        owner_name: 'संचालक / प्रोप्रायटर',
+        partner_name: '',
         address: 'स्टेशन रोड, मुख्य बाजारपेठ',
-        village_city: 'बारामती',
-        taluka: 'बारामती',
-        district: 'पुणे',
+        village_city: 'स्थानिक',
+        taluka: 'स्थानिक',
+        district: 'जिल्हा',
         state: 'महाराष्ट्र',
         pincode: '४१३१०२',
-        jurisdiction_city: 'बारामती',
+        jurisdiction_city: 'स्थानिक',
         mobile: '९८२२३३४४५५',
         mobile_secondary: '९८९०११२२३३',
-        email: 'samarthagro.baramati@gmail.com',
+        email: 'contact@krushiseva.com',
         gstin: '27AABCS1429B1Z8',
         cot_licence: 'COT/PUN/2022/104',
         fertilizer_licence: 'FL/PUN/2022/8492',
@@ -1875,7 +1875,30 @@ export const dbService = {
         settings.upi_id
       ]
     );
+
+    // Keep Admin user name in users table in sync with business proprietor dynamically
+    const adminName = settings.proprietor || settings.owner_name;
+    if (adminName && adminName.trim()) {
+      try {
+        sqliteEngine.run("UPDATE users SET name = ? WHERE id = 1 OR role = 'admin'", [adminName.trim()]);
+      } catch {}
+    }
+
     this.logAudit(userName, 'UPDATE_SETTINGS', 'BusinessSettings', '1', 'Updated shop business profile and licences');
+  },
+
+  async updateUser(id: number, data: Partial<User>, userName = 'Admin'): Promise<void> {
+    await sqliteEngine.getDb();
+    if (data.name && data.name.trim()) {
+      sqliteEngine.run('UPDATE users SET name = ? WHERE id = ?', [data.name.trim(), id]);
+    }
+    if (data.phone && data.phone.trim()) {
+      sqliteEngine.run('UPDATE users SET phone = ? WHERE id = ?', [data.phone.trim(), id]);
+    }
+    if (data.password_hash && data.password_hash.trim()) {
+      sqliteEngine.run('UPDATE users SET password_hash = ? WHERE id = ?', [data.password_hash.trim(), id]);
+    }
+    this.logAudit(userName, 'UPDATE_USER', 'User', String(id), `Updated user ${data.name || id}`);
   },
 
   async getInvoiceSettings(): Promise<InvoiceSettings> {

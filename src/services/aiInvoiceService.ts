@@ -39,6 +39,15 @@ export interface ParseInvoiceResponse {
   quotaExceeded?: boolean;
 }
 
+const REMOTE_SERVER_URL = 'https://ais-pre-edysvf2kzw65acv534pahe-256649770211.asia-southeast1.run.app';
+
+function getApiUrl(path: string): string {
+  if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
+    return path;
+  }
+  return `${REMOTE_SERVER_URL}${path}`;
+}
+
 class AiInvoiceService {
   private lastQuotaStatus: QuotaStatusResponse = {
     available: false,
@@ -60,7 +69,7 @@ class AiInvoiceService {
   }
 
   /**
-   * Check if Gemini API quota is available
+   * Check if scanner quota is available (Works in both Browser and Electron Desktop)
    */
   async checkQuotaStatus(force: boolean = false): Promise<QuotaStatusResponse> {
     const now = Date.now();
@@ -69,8 +78,29 @@ class AiInvoiceService {
       return this.lastQuotaStatus;
     }
 
+    // 1. Priority: If running inside Electron desktop app with IPC bridge
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.aiCheckQuota) {
+      try {
+        const desktopRes = await (window as any).electronAPI.aiCheckQuota();
+        if (desktopRes && typeof desktopRes.available === 'boolean') {
+          this.lastQuotaStatus = {
+            available: desktopRes.available,
+            quotaExceeded: Boolean(desktopRes.quotaExceeded),
+            reason: desktopRes.reason,
+          };
+          this.lastCheckedTime = Date.now();
+          this.notify();
+          return this.lastQuotaStatus;
+        }
+      } catch (ipcErr) {
+        console.warn('[DesktopApp] IPC checkQuota notice:', ipcErr);
+      }
+    }
+
+    // 2. Browser preview or fallback fetch
     try {
-      const res = await fetch(`/api/ai/quota-status${force ? '?force=true' : ''}`, {
+      const url = `${getApiUrl('/api/ai/quota-status')}${force ? '?force=true' : ''}`;
+      const res = await fetch(url, {
         headers: { 'Cache-Control': 'no-cache' },
       });
       if (!res.ok) {
@@ -114,11 +144,28 @@ class AiInvoiceService {
   }
 
   /**
-   * Send document image/PDF base64 to server endpoint for Gemini parsing
+   * Send document image/PDF base64 to server endpoint for parsing
    */
   async parseInvoice(fileBase64: string, mimeType: string): Promise<ParseInvoiceResponse> {
+    // 1. Priority: If running inside Electron desktop app with IPC bridge
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.aiParseInvoice) {
+      try {
+        const desktopRes = await (window as any).electronAPI.aiParseInvoice({ fileBase64, mimeType });
+        if (desktopRes) {
+          if (desktopRes.quotaExceeded) {
+            this.markQuotaExhausted();
+          }
+          return desktopRes;
+        }
+      } catch (ipcErr) {
+        console.warn('[DesktopApp] IPC parseInvoice notice:', ipcErr);
+      }
+    }
+
+    // 2. Browser preview or fallback fetch
     try {
-      const res = await fetch('/api/ai/parse-invoice', {
+      const url = getApiUrl('/api/ai/parse-invoice');
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -133,7 +180,7 @@ class AiInvoiceService {
         return {
           success: false,
           quotaExceeded: true,
-          error: json.error || 'Gemini API quota exceeded.',
+          error: json.error || 'दैनिक मर्यादा संपली आहे.',
         };
       }
 

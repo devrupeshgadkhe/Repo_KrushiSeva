@@ -13,7 +13,8 @@ import {
   Receipt, 
   RefreshCw,
   Eye,
-  Check
+  Check,
+  Camera
 } from 'lucide-react';
 import { AppLanguage, Supplier, Product } from '../../types';
 import { formatINR } from '../../utils/formatters';
@@ -122,8 +123,8 @@ export const AiInvoiceScannerModal: React.FC<AiInvoiceScannerModalProps> = ({
         onQuotaExceeded();
         setError(
           isMr
-            ? 'आजचा AI स्कॅनिंग मोफत कोटा पूर्ण झाला आहे. कोटा रीसेट झाल्यावर हे फिचर पुन्हा उपलब्ध होईल.'
-            : 'AI scan quota is temporarily exhausted for today. It will resume once reset.'
+            ? 'आजची दैनिक स्कॅनिंग मर्यादा पूर्ण झाली आहे. मर्यादा रीसेट झाल्यावर हे फिचर पुन्हा उपलब्ध होईल.'
+            : 'Daily invoice scanning limit reached for today. It will resume once reset.'
         );
         return;
       }
@@ -136,7 +137,7 @@ export const AiInvoiceScannerModal: React.FC<AiInvoiceScannerModalProps> = ({
       setScannedResult(res.data);
     } catch (err: any) {
       clearInterval(stepInterval);
-      setError(err.message || (isMr ? 'स्कॅनिंग दरम्यान त्रुटी आली.' : 'Error during AI invoice scanning.'));
+      setError(err.message || (isMr ? 'स्कॅनिंग दरम्यान त्रुटी आली.' : 'Error during invoice scanning.'));
     } finally {
       clearInterval(stepInterval);
       setLoading(false);
@@ -198,22 +199,22 @@ export const AiInvoiceScannerModal: React.FC<AiInvoiceScannerModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-emerald-950 text-white flex items-center justify-between">
+        <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-amber-300 shadow-xs">
-              <Sparkles className="w-4 h-4 animate-pulse" />
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shadow-xs">
+              <Camera className="w-4 h-4" />
             </div>
             <div>
               <h3 className="font-bold text-sm tracking-wide text-white flex items-center gap-2">
-                <span>{isMr ? 'खरेदी बिल AI स्कॅनर' : 'Purchase Bill AI Scanner'}</span>
+                <span>{isMr ? 'खरेदी पावती स्कॅनर' : 'Purchase Invoice Scanner'}</span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[10px] text-emerald-300 font-mono font-bold">
-                  Gemini Vision
+                  {isMr ? 'ऑटो-एन्ट्री' : 'Auto-Entry'}
                 </span>
               </h3>
               <p className="text-[11px] text-slate-300/80">
                 {isMr
                   ? 'खरेदी बिलाचा फोटो किंवा PDF निवडा, आपोआप सर्व माहिती भरली जाईल'
-                  : 'Pure multimodal vision auto-extraction for purchase bills and tax invoices'}
+                  : 'Fast automatic invoice extraction for purchase bills and tax invoices'}
               </p>
             </div>
           </div>
@@ -328,23 +329,23 @@ export const AiInvoiceScannerModal: React.FC<AiInvoiceScannerModalProps> = ({
                   )}
 
                   {loading && (
-                    <div className="p-4 bg-indigo-50 border border-indigo-200/80 rounded-xl space-y-3">
+                    <div className="p-4 bg-emerald-50 border border-emerald-200/80 rounded-xl space-y-3">
                       <div className="flex items-center gap-3">
-                        <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
+                        <Loader2 className="w-5 h-5 text-emerald-700 animate-spin" />
                         <div>
-                          <div className="text-xs font-bold text-indigo-950">
-                            {loadingStep === 1 && (isMr ? '१. Google Gemini Vision सह जोडणी करत आहे...' : '1. Connecting to Gemini Vision API...')}
-                            {loadingStep === 2 && (isMr ? '२. पुरवठादार माहिती, GSTIN व बिल क्रमांक शोधत आहे...' : '2. Extracting supplier details, GSTIN & invoice number...')}
+                          <div className="text-xs font-bold text-emerald-950">
+                            {loadingStep === 1 && (isMr ? '१. सिस्टीम सुरक्षित जोडणी करत आहे...' : '1. Initializing secure scanner...')}
+                            {loadingStep === 2 && (isMr ? '२. पुरवठादार माहिती, GSTIN व बिल क्रमांक वाचत आहे...' : '2. Extracting supplier details, GSTIN & invoice number...')}
                             {loadingStep >= 3 && (isMr ? '३. उत्पादने, बॅचेस, HSN व GST दरांची पडताळणी...' : '3. Reading line items, batch, HSN & GST rates...')}
                           </div>
-                          <div className="text-[11px] text-indigo-700/80">
-                            {isMr ? 'कृपया काही सेकंद थांबा, बिलातील सर्व माहिती संकलित होत आहे.' : 'Please wait, analyzing multimodal document...'}
+                          <div className="text-[11px] text-emerald-700/80">
+                            {isMr ? 'कृपया काही सेकंद थांबा, बिलातील सर्व माहिती संकलित होत आहे.' : 'Please wait, analyzing document...'}
                           </div>
                         </div>
                       </div>
-                      <div className="w-full bg-indigo-200/60 h-1.5 rounded-full overflow-hidden">
+                      <div className="w-full bg-emerald-200/60 h-1.5 rounded-full overflow-hidden">
                         <div
-                          className="bg-indigo-600 h-full transition-all duration-700 rounded-full"
+                          className="bg-emerald-700 h-full transition-all duration-700 rounded-full"
                           style={{ width: `${loadingStep * 33}%` }}
                         ></div>
                       </div>
@@ -507,17 +508,17 @@ export const AiInvoiceScannerModal: React.FC<AiInvoiceScannerModalProps> = ({
               className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm ${
                 !selectedFile || loading
                   ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                  : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer active:scale-95'
+                  : 'bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer active:scale-95'
               }`}
             >
               {loading ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>{isMr ? 'AI विश्लेषण सुरू आहे...' : 'Analyzing with Gemini...'}</span>
+                  <span>{isMr ? 'दस्तऐवज वाचत आहे...' : 'Scanning document...'}</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <Camera className="w-3.5 h-3.5 text-emerald-200" />
                   <span>{isMr ? 'बिल स्कॅन करा' : 'Scan Invoice'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>

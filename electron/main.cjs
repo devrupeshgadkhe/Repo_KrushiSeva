@@ -7,6 +7,15 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
+// Load environment variables for Desktop App
+try {
+  const dotenv = require('dotenv');
+  dotenv.config({ path: path.join(__dirname, '../.env') });
+  dotenv.config();
+} catch (e) {
+  console.warn('[DesktopApp] Dotenv note:', e.message);
+}
+
 let mainWindow = null;
 let downloadedDirectInstaller = null;
 let isDownloading = false;
@@ -570,6 +579,285 @@ ipcMain.handle('send-cloud-backup', async (_event, payload) => {
   }
 
   return { success: result.localSaved || result.cloudSaved, ...result };
+});
+
+// ============================================
+// Invoice Scanner Desktop Bridge: Check Quota & Parse
+// ============================================
+let desktopQuotaCache = {
+  available: false,
+  quotaExceeded: false,
+  reason: '',
+  timestamp: 0,
+};
+
+function tryLocalBackend(endpoint, method = 'GET', payload = null, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    try {
+      const isPost = method === 'POST';
+      const bodyData = payload ? JSON.stringify(payload) : null;
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: 3000,
+        path: endpoint,
+        method,
+        headers: {
+          'User-Agent': 'KrushiSevaERP-DesktopApp',
+          ...(bodyData ? {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(bodyData),
+          } : {}),
+        },
+        timeout: timeoutMs,
+      }, (res) => {
+        let raw = '';
+        res.on('data', (c) => { raw += c; });
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(raw);
+            resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, data: json });
+          } catch {
+            resolve({ ok: false, status: res.statusCode, error: 'Non-JSON response' });
+          }
+        });
+      });
+
+      req.on('error', (err) => resolve({ ok: false, status: 0, error: err.message }));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ ok: false, status: 408, error: 'Timeout' });
+      });
+
+      if (bodyData) req.write(bodyData);
+      req.end();
+    } catch (e) {
+      resolve({ ok: false, status: 500, error: e.message });
+    }
+  });
+}
+
+function probeGeminiDirect(apiKey) {
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({
+      contents: [{ parts: [{ text: 'ping' }] }],
+      generationConfig: { maxOutputTokens: 1 }
+    });
+
+    const req = https.request(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'User-Agent': 'KrushiSevaERP-DesktopApp'
+      },
+      timeout: 8000
+    }, (res) => {
+      let raw = '';
+      res.on('data', (c) => { raw += c; });
+      res.on('end', () => {
+        const isQuotaOrAuth = res.statusCode === 429 || res.statusCode === 403;
+        resolve({
+          available: res.statusCode >= 200 && res.statusCode < 300,
+          quotaExceeded: isQuotaOrAuth,
+          status: res.statusCode,
+          reason: isQuotaOrAuth ? 'QUOTA_OR_AUTH_UNAVAILABLE' : undefined
+        });
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ available: false, quotaExceeded: false, status: 0, reason: err.message });
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ available: false, quotaExceeded: false, status: 408, reason: 'Timeout' });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+function parseInvoiceDirectWithGemini(apiKey, fileBase64, mimeType) {
+  return new Promise((resolve) => {
+    let cleanBase64 = fileBase64;
+    if (cleanBase64.includes('base64,')) {
+      cleanBase64 = cleanBase64.split('base64,')[1];
+    }
+    cleanBase64 = cleanBase64.trim();
+
+    const postData = JSON.stringify({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: cleanBase64
+              }
+            },
+            {
+              text: `You are an expert Indian GST tax invoice analyzer specializing in Krushi Seva Kendra / agricultural input store purchase bills, seed, pesticide, fertilizer dealer invoices.
+Extract the following information in structured JSON:
+{
+  "supplierName": "Vendor or Supplier business name",
+  "supplierGstin": "15-digit GSTIN if available",
+  "supplierAddress": "Supplier address",
+  "supplierPhone": "Supplier phone number",
+  "supplierEmail": "Supplier email",
+  "invoiceNumber": "Invoice / Bill Number",
+  "invoiceDate": "YYYY-MM-DD",
+  "items": [
+    {
+      "name": "Product description / name",
+      "hsn": "HSN Code",
+      "batchNumber": "Batch Number",
+      "expiryDate": "YYYY-MM-DD",
+      "quantity": 10,
+      "unit": "PCS/BAG/LTR/KG",
+      "rate": 100,
+      "discount": 0,
+      "gstRate": 18,
+      "taxableAmount": 1000,
+      "totalAmount": 1180
+    }
+  ],
+  "subtotal": 1000,
+  "taxAmount": 180,
+  "grandTotal": 1180
+}
+Ensure all numeric fields are valid numbers. Return valid JSON only.`
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.1
+      }
+    });
+
+    const sendRequest = (modelName) => {
+      const req = https.request(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+          'User-Agent': 'KrushiSevaERP-DesktopApp'
+        },
+        timeout: 45000
+      }, (res) => {
+        let raw = '';
+        res.on('data', (c) => { raw += c; });
+        res.on('end', () => {
+          if (res.statusCode === 429 || res.statusCode === 403) {
+            return resolve({ success: false, quotaExceeded: true, error: 'Quota or rate limit reached.' });
+          }
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const rootJson = JSON.parse(raw);
+              const textContent = rootJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (textContent) {
+                const parsed = JSON.parse(textContent);
+                return resolve({ success: true, data: parsed });
+              }
+            } catch (jsonErr) {
+              return resolve({ success: false, error: 'Failed to parse invoice structure.' });
+            }
+          }
+          if (modelName === 'gemini-3.5-flash-lite') {
+            console.warn('[DesktopApp] Falling back to gemini-3.8-flash...');
+            return sendRequest('gemini-3.8-flash');
+          }
+          resolve({ success: false, error: `Scanner error (${res.statusCode})` });
+        });
+      });
+
+      req.on('error', (err) => {
+        if (modelName === 'gemini-3.5-flash-lite') {
+          return sendRequest('gemini-3.8-flash');
+        }
+        resolve({ success: false, error: err.message });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ success: false, error: 'Request timeout' });
+      });
+
+      req.write(postData);
+      req.end();
+    };
+
+    sendRequest('gemini-3.5-flash-lite');
+  });
+}
+
+ipcMain.handle('ai-check-quota', async () => {
+  const now = Date.now();
+  if (now - desktopQuotaCache.timestamp < 30000 && desktopQuotaCache.timestamp > 0) {
+    return {
+      available: desktopQuotaCache.available,
+      quotaExceeded: desktopQuotaCache.quotaExceeded,
+      reason: desktopQuotaCache.reason
+    };
+  }
+
+  // 1. Try local Express backend if running
+  const localRes = await tryLocalBackend('/api/ai/quota-status', 'GET', null, 1500);
+  if (localRes.ok && localRes.data) {
+    desktopQuotaCache = {
+      available: Boolean(localRes.data.available),
+      quotaExceeded: Boolean(localRes.data.quotaExceeded),
+      reason: localRes.data.reason || '',
+      timestamp: now
+    };
+    return desktopQuotaCache;
+  }
+
+  // 2. Direct probe via Google Gemini API if API key is present
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (apiKey) {
+    const probe = await probeGeminiDirect(apiKey);
+    desktopQuotaCache = {
+      available: probe.available,
+      quotaExceeded: probe.quotaExceeded,
+      reason: probe.reason || '',
+      timestamp: now
+    };
+    return desktopQuotaCache;
+  }
+
+  return {
+    available: false,
+    quotaExceeded: false,
+    reason: 'NO_API_KEY'
+  };
+});
+
+ipcMain.handle('ai-parse-invoice', async (_event, payload) => {
+  const { fileBase64, mimeType } = payload || {};
+  if (!fileBase64 || !mimeType) {
+    return { success: false, error: 'Missing file data or MIME type.' };
+  }
+
+  // 1. Try local Express backend if running
+  const localRes = await tryLocalBackend('/api/ai/parse-invoice', 'POST', payload, 45000);
+  if (localRes.ok && localRes.data) {
+    return localRes.data;
+  }
+
+  // 2. Direct parse via Gemini API in desktop process
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (apiKey) {
+    return await parseInvoiceDirectWithGemini(apiKey, fileBase64, mimeType);
+  }
+
+  return {
+    success: false,
+    error: 'Scanner service is not configured (missing GEMINI_API_KEY).'
+  };
 });
 
 // App Lifecycle
