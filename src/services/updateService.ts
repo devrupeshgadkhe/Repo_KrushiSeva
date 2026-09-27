@@ -370,7 +370,15 @@ class UpdateService {
    */
   public restartAndInstall() {
     if (this.state.isElectron && window.electronAPI) {
-      window.electronAPI.quitAndInstall();
+      if (typeof window.electronAPI.quitAndInstall === 'function') {
+        try {
+          window.electronAPI.quitAndInstall();
+        } catch (e) {
+          console.error('[UpdateService] restartAndInstall invocation error:', e);
+        }
+      } else {
+        console.warn('[UpdateService] quitAndInstall is not available on window.electronAPI');
+      }
     }
   }
 }
