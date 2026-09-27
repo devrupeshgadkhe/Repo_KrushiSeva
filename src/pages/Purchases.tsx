@@ -80,7 +80,7 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
   const [viewPurchase, setViewPurchase] = useState<Purchase | null>(null);
 
   // AI Bill Scanner states
-  const [aiAvailable, setAiAvailable] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState(true);
   const [isAiScanOpen, setIsAiScanOpen] = useState(false);
 
   // Monitor Gemini Quota and Credit Availability
@@ -93,7 +93,7 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
           setAiAvailable(status.available && !status.quotaExceeded);
         }
       } catch {
-        if (mounted) setAiAvailable(false);
+        if (mounted) setAiAvailable(true);
       }
     };
     checkQuota();
@@ -521,18 +521,16 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Quota-Based Dynamic Scan Button */}
-          {aiAvailable && (
-            <button
-              type="button"
-              onClick={() => setIsAiScanOpen(true)}
-              className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95 border border-emerald-700/60"
-              title={currentLang === 'mr' ? 'खरेदी बिल किंवा पावती स्कॅन करा' : 'Scan Purchase Invoice / Bill'}
-            >
-              <Camera className="w-4 h-4 text-emerald-300" />
-              <span>{currentLang === 'mr' ? 'बिल स्कॅन करा' : 'Scan Bill'}</span>
-            </button>
-          )}
+          {/* Always Available Scan Bill Button on Desktop & Web */}
+          <button
+            type="button"
+            onClick={() => setIsAiScanOpen(true)}
+            className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all cursor-pointer active:scale-95 border border-emerald-700/60"
+            title={currentLang === 'mr' ? 'खरेदी बिल किंवा पावती स्कॅन करा' : 'Scan Purchase Invoice / Bill'}
+          >
+            <Camera className="w-4 h-4 text-emerald-300" />
+            <span>{currentLang === 'mr' ? 'बिल स्कॅन करा' : 'Scan Bill'}</span>
+          </button>
 
           {activeTab === 'list' ? (
             <button

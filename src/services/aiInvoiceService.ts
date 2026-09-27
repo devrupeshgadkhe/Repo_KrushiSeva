@@ -50,7 +50,7 @@ function getApiUrl(path: string): string {
 
 class AiInvoiceService {
   private lastQuotaStatus: QuotaStatusResponse = {
-    available: false,
+    available: true,
     quotaExceeded: false,
   };
   private lastCheckedTime = 0;
@@ -105,7 +105,7 @@ class AiInvoiceService {
       });
       if (!res.ok) {
         this.lastQuotaStatus = {
-          available: false,
+          available: res.status !== 429 && res.status !== 403,
           quotaExceeded: res.status === 429 || res.status === 403,
           reason: `HTTP_${res.status}`,
         };
@@ -119,9 +119,9 @@ class AiInvoiceService {
       }
     } catch {
       this.lastQuotaStatus = {
-        available: false,
+        available: true,
         quotaExceeded: false,
-        reason: 'NETWORK_ERROR',
+        reason: 'OFFLINE_READY',
       };
     }
 
