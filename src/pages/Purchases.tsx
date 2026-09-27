@@ -83,6 +83,66 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
   const [aiAvailable, setAiAvailable] = useState(true);
   const [isAiScanOpen, setIsAiScanOpen] = useState(false);
 
+  // Quick Add Supplier Modal state
+  const [isQuickSupplierOpen, setIsQuickSupplierOpen] = useState(false);
+  const [quickSuppName, setQuickSuppName] = useState('');
+  const [quickSuppCompany, setQuickSuppCompany] = useState('');
+  const [quickSuppMobile, setQuickSuppMobile] = useState('');
+  const [quickSuppGstin, setQuickSuppGstin] = useState('');
+  const [quickSuppCity, setQuickSuppCity] = useState('');
+  const [quickSuppBalance, setQuickSuppBalance] = useState<number>(0);
+  const [isSavingQuickSupp, setIsSavingQuickSupp] = useState(false);
+
+  const handleSaveQuickSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickSuppName.trim()) {
+      showToast(currentLang === 'mr' ? 'कृपया पुरवठादाराचे नाव प्रविष्ट करा.' : 'Please enter supplier name.', 'error');
+      return;
+    }
+
+    setIsSavingQuickSupp(true);
+    try {
+      const suppName = quickSuppName.trim();
+      const newId = await dbService.createSupplier({
+        name: suppName,
+        company: quickSuppCompany.trim() || suppName,
+        mobile: quickSuppMobile.trim() || '0000000000',
+        gstin: quickSuppGstin.trim().toUpperCase() || undefined,
+        city: quickSuppCity.trim() || undefined,
+        opening_balance: Number(quickSuppBalance) || 0,
+        current_balance: Number(quickSuppBalance) || 0,
+        active: true,
+      });
+
+      const updated = await dbService.getSuppliers();
+      setSuppliers(updated);
+      setSelectedSupplierId(newId);
+      setSupplierSearch('');
+      setIsSupplierOpen(false);
+      setIsQuickSupplierOpen(false);
+      setQuickSuppName('');
+      setQuickSuppCompany('');
+      setQuickSuppMobile('');
+      setQuickSuppGstin('');
+      setQuickSuppCity('');
+      setQuickSuppBalance(0);
+      showToast(
+        currentLang === 'mr'
+          ? `नवीन पुरवठादार '${suppName}' यशस्वीपणे जोडला!`
+          : `Supplier '${suppName}' created successfully!`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Failed to create quick supplier:', err);
+      showToast(
+        err.message || (currentLang === 'mr' ? 'पुरवठादार जोडताना त्रुटी आली' : 'Failed to add supplier'),
+        'error'
+      );
+    } finally {
+      setIsSavingQuickSupp(false);
+    }
+  };
+
   // Monitor Gemini Quota and Credit Availability
   useEffect(() => {
     let mounted = true;
@@ -163,46 +223,54 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
       }
 
       // 3. Match or Create Supplier
-      let matchedSupp = null;
-      const cleanGstin = scanned.supplierGstin?.trim().toUpperCase();
-      if (cleanGstin) {
-        matchedSupp = suppliers.find((s) => s.gstin && s.gstin.trim().toUpperCase() === cleanGstin);
+      let matchedSupp: Supplier | null = null;
+      const cleanGstin = scanned.supplierGstin ? scanned.supplierGstin.trim().toUpperCase() : '';
+      if (cleanGstin && cleanGstin.length >= 15) {
+        matchedSupp = suppliers.find((s) => s.gstin && s.gstin.trim().toUpperCase() === cleanGstin) || null;
       }
 
-      if (!matchedSupp && scanned.supplierName) {
+      if (!matchedSupp && scanned.supplierName && scanned.supplierName.trim()) {
         const cleanName = scanned.supplierName.trim().toLowerCase();
-        matchedSupp = suppliers.find(
-          (s) =>
-            s.name.toLowerCase() === cleanName ||
-            (s.company && s.company.toLowerCase() === cleanName) ||
-            cleanName.includes(s.name.toLowerCase()) ||
-            s.name.toLowerCase().includes(cleanName)
-        );
+        const normName = cleanName.replace(/[^a-z0-9]/g, '');
+        matchedSupp = suppliers.find((s) => {
+          const sName = s.name.trim().toLowerCase();
+          const sNorm = sName.replace(/[^a-z0-9]/g, '');
+          const cName = (s.company || '').trim().toLowerCase();
+          const cNorm = cName.replace(/[^a-z0-9]/g, '');
+          return sName === cleanName || cName === cleanName || (normName.length > 3 && (sNorm === normName || cNorm === normName));
+        }) || null;
       }
 
       if (matchedSupp) {
         setSelectedSupplierId(matchedSupp.id);
         setSupplierSearch(matchedSupp.name);
-      } else if (scanned.supplierName.trim()) {
-        // Auto-create supplier in SQLite DB
+      } else if (scanned.supplierName && scanned.supplierName.trim()) {
+        // Auto-create new supplier in SQLite DB
         try {
+          const suppName = scanned.supplierName.trim();
           const newSuppId = await dbService.createSupplier({
-            name: scanned.supplierName.trim(),
-            company: scanned.supplierName.trim(),
-            gstin: scanned.supplierGstin?.trim() || undefined,
+            name: suppName,
+            company: suppName,
+            gstin: cleanGstin || undefined,
             address: scanned.supplierAddress?.trim() || undefined,
-            mobile: scanned.supplierPhone?.trim() || undefined,
+            mobile: scanned.supplierPhone?.trim() || '0000000000',
             email: scanned.supplierEmail?.trim() || undefined,
             active: true,
             opening_balance: 0,
             current_balance: 0,
           });
-          setSelectedSupplierId(newSuppId);
-          setSupplierSearch(scanned.supplierName.trim());
           const updatedSupps = await dbService.getSuppliers();
           setSuppliers(updatedSupps);
+          setSelectedSupplierId(newSuppId);
+          setSupplierSearch(suppName);
+          showToast(
+            currentLang === 'mr'
+              ? `नवीन पुरवठादार '${suppName}' यादीमध्ये जोडला.`
+              : `New supplier '${suppName}' added to list.`,
+            'success'
+          );
         } catch (e) {
-          console.warn('Could not auto-create supplier, continuing:', e);
+          console.error('Could not auto-create supplier:', e);
         }
       }
 
@@ -586,9 +654,23 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
             {/* Searchable Autocomplete Supplier Dropdown */}
             <div className="relative" ref={supplierRef}>
-              <label className="block font-bold text-slate-700 mb-1">
-                {getTranslation('supplier', currentLang)} *
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-700">
+                  {getTranslation('supplier', currentLang)} *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickSuppName(supplierSearch.trim());
+                    setIsQuickSupplierOpen(true);
+                  }}
+                  className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
+                  title={currentLang === 'mr' ? 'नवीन पुरवठादार तात्काळ जोडा' : 'Add New Supplier Quickly'}
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{currentLang === 'mr' ? '+ नवीन पुरवठादार' : '+ Quick Supplier'}</span>
+                </button>
+              </div>
 
               {selectedSupplier ? (
                 <div className="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-300 rounded-lg text-xs shadow-2xs">
@@ -643,7 +725,7 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
                   </div>
 
                   {isSupplierOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-100">
                       {filteredSuppliers.length > 0 ? (
                         filteredSuppliers.map((s) => (
                           <div
@@ -671,6 +753,23 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
                           {currentLang === 'mr' ? 'कोणताही पुरवठादार सापडला नाही' : 'No suppliers found'}
                         </div>
                       )}
+
+                      {/* Quick Add Supplier Action in Dropdown */}
+                      <div
+                        onClick={() => {
+                          setQuickSuppName(supplierSearch.trim());
+                          setIsQuickSupplierOpen(true);
+                          setIsSupplierOpen(false);
+                        }}
+                        className="p-2.5 bg-emerald-50/90 hover:bg-emerald-100 text-emerald-900 border-t border-emerald-200 cursor-pointer transition-colors flex items-center gap-2 font-bold text-xs"
+                      >
+                        <Plus className="w-4 h-4 text-emerald-700 shrink-0" />
+                        <span className="truncate">
+                          {currentLang === 'mr'
+                            ? `+ नवीन पुरवठादार जोडा ${supplierSearch.trim() ? `"${supplierSearch.trim()}"` : ''}`
+                            : `+ Add New Supplier ${supplierSearch.trim() ? `"${supplierSearch.trim()}"` : ''}`}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1180,6 +1279,141 @@ export const Purchases: React.FC<PurchasesProps> = ({ currentLang, onPurchaseCom
         onApplyData={handleApplyAiScannedData}
         onQuotaExceeded={() => setAiAvailable(false)}
       />
+
+      {/* Quick Add Supplier Modal */}
+      {isQuickSupplierOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="px-5 py-4 bg-emerald-800 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-700/80 flex items-center justify-center">
+                  <Truck className="w-4 h-4 text-emerald-200" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">
+                    {currentLang === 'mr' ? 'नवीन पुरवठादार नोंदवा' : 'Quick Add Supplier'}
+                  </h3>
+                  <p className="text-[11px] text-emerald-200">
+                    {currentLang === 'mr' ? 'खरेदी नोंदीसाठी पुरवठादार तात्काळ जोडा' : 'Add new vendor for purchase entry'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsQuickSupplierOpen(false)}
+                className="p-1 hover:bg-emerald-700 rounded-lg text-emerald-200 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickSupplier} className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {currentLang === 'mr' ? 'पुरवठादार / एजन्सी नाव' : 'Supplier / Firm Name'} *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={quickSuppName}
+                    onChange={(e) => setQuickSuppName(e.target.value)}
+                    placeholder={currentLang === 'mr' ? 'उदा. महालक्ष्मी ॲग्रो एजन्सी' : 'e.g. Mahalaxmi Agro Agency'}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium focus:outline-emerald-600 shadow-2xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {currentLang === 'mr' ? 'कंपनी / ब्रँड' : 'Company / Brand'}
+                  </label>
+                  <input
+                    type="text"
+                    value={quickSuppCompany}
+                    onChange={(e) => setQuickSuppCompany(e.target.value)}
+                    placeholder={currentLang === 'mr' ? 'कंपनी किंवा ब्रँड नाव' : 'Brand or distributor'}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium focus:outline-emerald-600 shadow-2xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {currentLang === 'mr' ? 'मोबाईल नंबर' : 'Mobile Number'}
+                  </label>
+                  <input
+                    type="tel"
+                    value={quickSuppMobile}
+                    onChange={(e) => setQuickSuppMobile(e.target.value)}
+                    placeholder={currentLang === 'mr' ? '१० अंकी मोबाईल' : '10-digit mobile'}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium focus:outline-emerald-600 shadow-2xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {currentLang === 'mr' ? 'GSTIN क्रमांक' : 'GSTIN Number'}
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={15}
+                    value={quickSuppGstin}
+                    onChange={(e) => setQuickSuppGstin(e.target.value.toUpperCase())}
+                    placeholder="27AAAAA0000A1Z5"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium font-mono uppercase focus:outline-emerald-600 shadow-2xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {currentLang === 'mr' ? 'शहर / गाव' : 'City / Town'}
+                  </label>
+                  <input
+                    type="text"
+                    value={quickSuppCity}
+                    onChange={(e) => setQuickSuppCity(e.target.value)}
+                    placeholder={currentLang === 'mr' ? 'उदा. पुणे / बारामती' : 'e.g. Pune / Baramati'}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium focus:outline-emerald-600 shadow-2xs"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    {currentLang === 'mr' ? 'आरंभीची बाकी / उधारी (₹)' : 'Opening Balance (₹)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={quickSuppBalance || ''}
+                    onChange={(e) => setQuickSuppBalance(parseFloat(e.target.value) || 0)}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium font-mono focus:outline-emerald-600 shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickSupplierOpen(false)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  {currentLang === 'mr' ? 'रद्द करा' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingQuickSupp || !quickSuppName.trim()}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isSavingQuickSupp ? (currentLang === 'mr' ? 'जतन करत आहे...' : 'Saving...') : (currentLang === 'mr' ? 'पुरवठादार जोडा व निवडा' : 'Add & Select Supplier')}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

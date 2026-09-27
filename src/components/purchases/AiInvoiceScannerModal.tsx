@@ -163,19 +163,22 @@ export const AiInvoiceScannerModal: React.FC<AiInvoiceScannerModalProps> = ({
 
   // Helper to check if scanned supplier matches any existing supplier
   const findMatchingSupplier = (suppName: string, gstin?: string) => {
-    if (!suppName) return null;
-    if (gstin && gstin.trim()) {
+    if (!suppName && !gstin) return null;
+    if (gstin && gstin.trim().length >= 15) {
       const cleanGstin = gstin.trim().toUpperCase();
       const matched = suppliers.find((s) => s.gstin && s.gstin.trim().toUpperCase() === cleanGstin);
       if (matched) return matched;
     }
+    if (!suppName) return null;
     const cleanName = suppName.trim().toLowerCase();
-    return suppliers.find(
-      (s) =>
-        s.name.toLowerCase() === cleanName ||
-        (s.company && s.company.toLowerCase() === cleanName) ||
-        cleanName.includes(s.name.toLowerCase())
-    );
+    const normName = cleanName.replace(/[^a-z0-9]/g, '');
+    return suppliers.find((s) => {
+      const sName = s.name.trim().toLowerCase();
+      const sNorm = sName.replace(/[^a-z0-9]/g, '');
+      const cName = (s.company || '').trim().toLowerCase();
+      const cNorm = cName.replace(/[^a-z0-9]/g, '');
+      return sName === cleanName || cName === cleanName || (normName.length > 3 && (sNorm === normName || cNorm === normName));
+    });
   };
 
   // Helper to check if product matches store products

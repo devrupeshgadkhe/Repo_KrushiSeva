@@ -1270,6 +1270,11 @@ export const dbService = {
 
   async saveSupplier(supp: Partial<Supplier>, userName = 'Admin'): Promise<number> {
     await sqliteEngine.getDb();
+    const cleanName = (supp.name && String(supp.name).trim()) || 'New Supplier';
+    const cleanCompany = (supp.company && String(supp.company).trim()) || cleanName;
+    const cleanMobile = (supp.mobile && String(supp.mobile).trim()) ? String(supp.mobile).trim() : '0000000000';
+    const cleanGstin = supp.gstin ? String(supp.gstin).trim().toUpperCase() : '';
+
     if (supp.id) {
       sqliteEngine.run(
         `UPDATE suppliers SET 
@@ -1277,16 +1282,20 @@ export const dbService = {
           address = ?, city = ?, state = ?, gstin = ?, licence_no = ?, credit_limit = ? 
         WHERE id = ?`,
         [
-          supp.name, supp.company, supp.contact_person || '', supp.mobile, supp.email || '',
-          supp.address || '', supp.city || '', supp.state || 'Maharashtra', supp.gstin || '',
+          cleanName, cleanCompany, supp.contact_person || '', cleanMobile, supp.email || '',
+          supp.address || '', supp.city || '', supp.state || 'Maharashtra', cleanGstin,
           supp.licence_no || '', supp.credit_limit || 500000, supp.id
         ]
       );
-      this.logAudit(userName, 'UPDATE', 'Supplier', String(supp.id), `Updated supplier ${supp.name}`);
+      this.logAudit(userName, 'UPDATE', 'Supplier', String(supp.id), `Updated supplier ${cleanName}`);
       return supp.id;
     } else {
       const lastSupp = sqliteEngine.queryOne<{ max_id: number }>('SELECT MAX(id) as max_id FROM suppliers');
-      const nextCode = `SUP-${String(101 + (lastSupp?.max_id || 0)).padStart(4, '0')}`;
+      let nextCode = `SUP-${String(1001 + (lastSupp?.max_id || 0)).padStart(4, '0')}`;
+      const existing = sqliteEngine.queryOne('SELECT id FROM suppliers WHERE supplier_code = ?', [nextCode]);
+      if (existing) {
+        nextCode = `SUP-${Date.now().toString().slice(-6)}`;
+      }
 
       const res = sqliteEngine.run(
         `INSERT INTO suppliers (
@@ -1294,12 +1303,12 @@ export const dbService = {
           state, gstin, licence_no, credit_limit, opening_balance, current_balance, active, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
         [
-          nextCode, supp.name, supp.company, supp.contact_person || '', supp.mobile, supp.email || '',
-          supp.address || '', supp.city || 'पुणे', supp.state || 'Maharashtra', supp.gstin || '',
-          supp.licence_no || '', supp.credit_limit || 500000, supp.opening_balance || 0, supp.opening_balance || 0
+          nextCode, cleanName, cleanCompany, supp.contact_person || '', cleanMobile, supp.email || '',
+          supp.address || '', supp.city || 'पुणे', supp.state || 'Maharashtra', cleanGstin,
+          supp.licence_no || '', supp.credit_limit || 500000, Number(supp.opening_balance) || 0, Number(supp.opening_balance) || 0
         ]
       );
-      this.logAudit(userName, 'CREATE', 'Supplier', String(res.lastInsertRowid), `Created supplier ${supp.name}`);
+      this.logAudit(userName, 'CREATE', 'Supplier', String(res.lastInsertRowid), `Created supplier ${cleanName}`);
       return res.lastInsertRowid;
     }
   },
