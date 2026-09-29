@@ -568,7 +568,7 @@ ipcMain.handle('send-cloud-backup', async (_event, payload) => {
   }
 
   // 2. Transmit to Google Apps Script / Google Drive
-  const targetGasUrl = payload.gasUrl || 'https://script.google.com/macros/s/AKfycbyAYKVB5xsVTtyKjQv1R-9sSRKsCJo8VZFHZPgqCaKOHZYpbRQJI_PgFvGACKZ32r8/exec';
+  const targetGasUrl = payload.gasUrl || 'https://script.google.com/macros/s/AKfycbyj6Rf81Y9TQE6JThFU0iWDz3LI4TzkA3ts4L_NQGm7ekCg0hSM8RNiA7yS00MGq9w/exec';
   try {
     const dataStr = JSON.stringify(payload);
     const cloudRes = await new Promise((resolve) => {

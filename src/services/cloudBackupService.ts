@@ -10,7 +10,7 @@ export interface CloudBackupState {
 }
 
 // Google Apps Script Web App endpoint and target account configured privately (never exposed on UI)
-const DEFAULT_CLOUD_BACKUP_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyAYKVB5xsVTtyKjQv1R-9sSRKsCJo8VZFHZPgqCaKOHZYpbRQJI_PgFvGACKZ32r8/exec';
+const DEFAULT_CLOUD_BACKUP_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyj6Rf81Y9TQE6JThFU0iWDz3LI4TzkA3ts4L_NQGm7ekCg0hSM8RNiA7yS00MGq9w/exec';
 const BACKUP_ACCOUNT_EMAIL = 'pradipayanbackup@gmail.com';
 
 const STORAGE_LAST_BACKUP_TIME = 'krushi_last_auto_backup_timestamp';

@@ -114,8 +114,14 @@ class GoogleDriveBackupService {
     console.log('[GoogleDriveBackup] Credentials updated dynamically. Service Account is now active.');
   }
 
+  public getGASUrl(): string {
+    const envUrl = process.env.GOOGLE_APPS_SCRIPT_URL?.trim();
+    if (envUrl && envUrl.startsWith('http')) return envUrl;
+    return 'https://script.google.com/macros/s/AKfycbyj6Rf81Y9TQE6JThFU0iWDz3LI4TzkA3ts4L_NQGm7ekCg0hSM8RNiA7yS00MGq9w/exec';
+  }
+
   public isConfigured(): boolean {
-    const gasUrl = process.env.GOOGLE_APPS_SCRIPT_URL?.trim();
+    const gasUrl = this.getGASUrl();
     if (gasUrl && gasUrl.startsWith('http')) return true;
 
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
@@ -637,7 +643,7 @@ class GoogleDriveBackupService {
       let driveFileId: string | undefined = undefined;
       let effectiveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() || '1SHObwtgz_eXHVNhDUDbtJWvA75E96RA8';
       let uploadStatus: 'SUCCESS' | 'LOCAL_SAVED' = 'SUCCESS';
-      const gasUrl = process.env.GOOGLE_APPS_SCRIPT_URL?.trim();
+      const gasUrl = this.getGASUrl();
 
       if (gasUrl && gasUrl.startsWith('http')) {
         console.log(`[GoogleDriveBackup] Uploading ${fileName} via Google Apps Script Web App...`);
