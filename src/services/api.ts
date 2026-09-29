@@ -755,7 +755,7 @@ export const dbService = {
     });
   },
 
-  async getSales(search = '', fromDate = '', toDate = '', limit = 100): Promise<Sale[]> {
+  async getSales(search = '', fromDate = '', toDate = '', limit = 5000): Promise<Sale[]> {
     await sqliteEngine.getDb();
     let sql = 'SELECT * FROM sales WHERE 1=1';
     const params: any[] = [];
@@ -1248,17 +1248,34 @@ export const dbService = {
     });
   },
 
-  async getPurchases(search = '', limit = 100): Promise<Purchase[]> {
+  async getPurchases(search = '', fromDateOrLimit?: string | number, toDate = '', limit = 5000): Promise<Purchase[]> {
     await sqliteEngine.getDb();
     let sql = 'SELECT * FROM purchases WHERE 1=1';
     const params: any[] = [];
+    let fromDate = '';
+    let actualLimit = limit;
+
+    if (typeof fromDateOrLimit === 'number') {
+      actualLimit = fromDateOrLimit;
+    } else if (typeof fromDateOrLimit === 'string') {
+      fromDate = fromDateOrLimit;
+    }
+
     if (search.trim()) {
       const q = `%${search.trim()}%`;
       sql += ' AND (purchase_no LIKE ? OR supplier_invoice_no LIKE ? OR supplier_name LIKE ?)';
       params.push(q, q, q);
     }
+    if (fromDate) {
+      sql += ' AND (COALESCE(invoice_date, purchase_date) >= ?)';
+      params.push(fromDate);
+    }
+    if (toDate) {
+      sql += ' AND (COALESCE(invoice_date, purchase_date) <= ?)';
+      params.push(toDate);
+    }
     sql += ' ORDER BY id DESC LIMIT ?';
-    params.push(limit);
+    params.push(actualLimit);
     const rows = sqliteEngine.query<any>(sql, params);
     return rows.map((p) => ({
       ...p,
