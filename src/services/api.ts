@@ -1736,9 +1736,9 @@ export const dbService = {
       const holder = `${b?.shop_name_mr || b?.shop_name || 'श्री समर्थ कृषी सेवा केंद्र'} (${b?.proprietor || b?.owner_name || 'संचालक'})`;
       sqliteEngine.run(`
         INSERT INTO licences (licence_type, licence_no, holder_name, issuing_authority, issue_date, expiry_date, notes) VALUES
-        ('Fertilizer', ?, ?, 'जिल्हा अधीक्षक कृषी अधिकारी, पुणे', '2022-05-10', '2027-05-09', 'खते विक्री व साठवणूक अधिकृत परवाना (Class A)'),
-        ('Seed', ?, ?, 'कृषी संचालक (निविष्ठा व गुणनियंत्रण), महाराष्ट्र राज्य', '2021-06-15', '2026-11-30', 'बियाणे परवाना (लवकर नूतनीकरण आवश्यक - Alert Active)'),
-        ('Insecticide', ?, ?, 'कृषी उपसंचालक व गुणनियंत्रण निरीक्षक, पुणे', '2023-08-01', '2028-07-31', 'कीटकनाशक व बुरशीनाशक विक्री परवाना')
+        ('Fertilizer', ?, ?, 'परवाना कार्यालय (Licence Office)', '2022-05-10', '2027-05-09', 'खते विक्री व साठवणूक परवाना'),
+        ('Seed', ?, ?, 'परवाना कार्यालय (Licence Office)', '2021-06-15', '2026-11-30', 'बियाणे विक्री परवाना'),
+        ('Insecticide', ?, ?, 'परवाना कार्यालय (Licence Office)', '2023-08-01', '2028-07-31', 'कीटकनाशक विक्री परवाना')
       `, [
         b?.fertilizer_licence || 'FL/PUN/2022/8492',
         holder,

@@ -163,7 +163,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
                   printFormat === 'A4' ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:text-white'
                 }`}
               >
-                {isMr ? 'A4 प्रमाणित बिल' : 'A4 Statutory Invoice'}
+                {isMr ? 'A4 बिल' : 'A4 Invoice'}
               </button>
               <button
                 type="button"
@@ -250,7 +250,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
         {/* Printable Area */}
         <div className="modal-scroll-area flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100 flex justify-center">
           {printFormat === 'A4' ? (
-            /* =================== A4 STATUTORY INVOICE (DOCUMENT 1 COMPLIANT) =================== */
+            /* =================== A4 INVOICE =================== */
             <div 
               id="invoice-print-container"
               className="bg-white text-slate-900 w-full max-w-[840px] p-6 shadow-sm border border-slate-400 rounded-sm font-sans text-xs min-h-[950px] flex flex-col justify-between print:p-0 print:border-none print:shadow-none"
@@ -270,10 +270,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
 
                 {/* 2. Three-Column Header (Licences | Shop Identity | Contact & GST) */}
                 <div className="border border-slate-400 rounded-xs p-2.5 mb-2 grid grid-cols-12 gap-2 text-slate-800 bg-slate-50/40">
-                  {/* Left: Statutory Licences */}
+                  {/* Left: Licences */}
                   <div className="col-span-3 text-[10px] space-y-0.5 border-r border-slate-300 pr-2">
                     <div className="font-semibold text-slate-500 uppercase text-[9px] mb-1">
-                      {isMr ? 'कायदेशीर परवाने' : 'Statutory Licences'}
+                      {isMr ? 'परवाने तपशील' : 'Licence Details'}
                     </div>
                     <div><span className="font-bold">COT Lic:</span> {businessSettings.cot_licence || '-'}</div>
                     <div><span className="font-bold">Pest Lic:</span> {businessSettings.pesticide_licence || '-'}</div>
@@ -603,14 +603,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({
               {/* 7. Statutory Declarations & Signatures */}
               <div className="pt-2 border-t-2 border-slate-400">
                 <div className="grid grid-cols-12 gap-3 items-end">
-                  {/* Left: 5 Statutory Agricultural Notices */}
+                  {/* Left: 5 Standard Agricultural Notices */}
                   <div className="col-span-8 text-[9px] text-slate-700 leading-tight space-y-0.5 border border-slate-300 p-2 rounded-2xs bg-slate-50/50">
                     <div className="font-bold text-slate-900 uppercase mb-0.5">
-                      {isMr ? 'वैधानिक नियम व अटी:' : 'Statutory Terms & Conditions:'}
+                      {isMr ? 'नियम व अटी:' : 'Terms & Conditions:'}
                     </div>
                     <p>1. {isMr ? 'विषारी औषधाने प्रक्रिया केलेले बियाणे, खाण्यासाठी, तेलासाठी किंवा पशु खाद्यासाठी वापरू नये.' : 'Seeds treated with poisonous chemicals must not be used for food, oil, or animal feed.'}</p>
                     <p>2. {isMr ? 'पेरणीपूर्वी उगवण शक्तीची चाचणी करून घ्यावी. सुयोग्य बुरशी नाशकाने बियाणे प्रक्रिया करावी.' : 'Check germination percentage before sowing and treat with recommended fungicide.'}</p>
-                    <p>3. {isMr ? 'कीटकनाशके वापरण्यापूर्वी लेबल व माहिती वाचून खबरदारीच्या सर्व सूचनांचे पालन करावे.' : 'Read product leaflet/label thoroughly and follow all statutory safety precautions for pesticides.'}</p>
+                    <p>3. {isMr ? 'कीटकनाशके वापरण्यापूर्वी लेबल व माहिती वाचून खबरदारीच्या सर्व सूचनांचे पालन करावे.' : 'Read product leaflet/label thoroughly and follow safety precautions for pesticides.'}</p>
                     <p>4. {isMr ? 'फक्त शेती उपयोगीसाठी.' : 'For agricultural use only.'}</p>
                     <p>5. Subject to <strong className="uppercase">'{businessSettings.jurisdiction_city || businessSettings.taluka || 'Local'}'</strong> Jurisdiction Only. E.&.O.E.</p>
                   </div>

@@ -522,11 +522,11 @@ export const Settings: React.FC<SettingsProps> = ({ currentLang, onSettingsSaved
             </div>
           </div>
 
-          {/* Statutory Licences & GST */}
+          {/* Business Licences & GST */}
           <div className="space-y-3 pt-3 border-t">
             <h3 className="font-bold text-sm text-slate-800 border-b pb-2 flex items-center gap-2">
               <Building className="w-4 h-4 text-blue-700" />
-              <span>{isMr ? 'शासकीय परवाने व GST तपशील' : 'Statutory Licences & GST'}</span>
+              <span>{isMr ? 'व्यवसाय परवाने व GST तपशील' : 'Business Licences & GST'}</span>
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

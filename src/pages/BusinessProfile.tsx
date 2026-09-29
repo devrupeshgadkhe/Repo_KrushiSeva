@@ -108,7 +108,7 @@ export const BusinessProfile: React.FC<BusinessProfileProps> = ({ currentLang, o
       setSuccessMsg(
         isMr 
           ? 'व्यवसाय प्रोफाइल व परवाना तपशील यशस्वीरीत्या जतन केले!' 
-          : 'Business details & statutory licenses saved successfully!'
+          : 'Business details & licences saved successfully!'
       );
       if (onSettingsSaved) onSettingsSaved();
 
@@ -142,12 +142,12 @@ export const BusinessProfile: React.FC<BusinessProfileProps> = ({ currentLang, o
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900">
-              {isMr ? 'व्यवसाय प्रोफाइल आणि कायदेशीर तपशील' : 'Business Profile & Statutory Details'}
+              {isMr ? 'व्यवसाय प्रोफाइल आणि परवाने तपशील' : 'Business Profile & Licence Details'}
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
               {isMr 
                 ? 'दुकान नाव, अधिकृत परवाने, पत्ता, बँक तपशील व पावती नियम व्यवस्थापित करा'
-                : 'Manage shop identity, agricultural licenses, address, banking info and tax invoice rules'}
+                : 'Manage shop identity, licences, address, banking info and invoice rules'}
             </p>
           </div>
         </div>
@@ -405,11 +405,11 @@ export const BusinessProfile: React.FC<BusinessProfileProps> = ({ currentLang, o
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-                {isMr ? '३. कृषी कायदेशीर परवाने आणि GSTIN' : '3. Statutory Licences & GSTIN'}
+                {isMr ? '३. व्यवसाय परवाने आणि GSTIN' : '3. Business Licences & GSTIN'}
               </h2>
             </div>
             <span className="text-2xs font-semibold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-full">
-              {isMr ? 'शासकीय तपासणी सुसंगत' : 'Govt Compliance Ready'}
+              {isMr ? 'परवाना माहिती' : 'Licence Details'}
             </span>
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -547,24 +547,24 @@ export const BusinessProfile: React.FC<BusinessProfileProps> = ({ currentLang, o
           </div>
         </div>
 
-        {/* Section 5: Statutory Declarations on Bill */}
+        {/* Section 5: Standard Notices on Bill */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-emerald-600" />
               <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-                {isMr ? '५. विक्री बिलावरील कायदेशीर सूचना व अटी' : '5. Statutory Declarations on Sales Bill'}
+                {isMr ? '५. विक्री बिलावरील सूचना व अटी' : '5. Terms & Notices on Sales Bill'}
               </h2>
             </div>
             <span className="text-2xs text-slate-500 font-medium">
-              {isMr ? 'बिलाच्या डाव्या खालील भागात छापल्या जाणाऱ्या ५ वैधानिक सूचना' : '5 Statutory notices printed on bottom-left of invoice'}
+              {isMr ? 'बिलाच्या डाव्या खालील भागात छापल्या जाणाऱ्या ५ सूचना' : '5 Standard notices printed on bottom-left of invoice'}
             </span>
           </div>
 
           <div className="p-6 space-y-4">
             <div className="p-4 bg-amber-50/70 border border-amber-200/80 rounded-xl space-y-2 text-xs text-amber-900 leading-relaxed">
               <div className="font-bold flex items-center gap-1.5 text-amber-950">
-                <span>{isMr ? 'बिलावर स्वयंचलित छापल्या जाणाऱ्या कृषी नियमावली सूचना:' : 'Standard Agricultural Declarations automatically printed:'}</span>
+                <span>{isMr ? 'बिलावर स्वयंचलित छापल्या जाणाऱ्या सूचना व अटी:' : 'Standard Notices & Terms printed on bill:'}</span>
               </div>
               <ol className="list-decimal pl-5 space-y-1">
                 <li>

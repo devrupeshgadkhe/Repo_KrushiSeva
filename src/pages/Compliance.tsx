@@ -285,12 +285,12 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-900">
-                {isMr ? 'वैधानिक कृषी नोंदवह्या व अहवाल' : 'Statutory Agricultural Registers & Compliance'}
+                {isMr ? 'कृषी नोंदवह्या व साठा अहवाल' : 'Agricultural Stock & Sales Registers'}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
                 {isMr 
-                  ? 'खते, बियाणे आणि कीटकनाशके यांच्या शासकीय तपासणीसाठी अधिकृत अहवाल' 
-                  : 'Official registers for Fertilizers, Seeds and Agrochemicals for departmental inspection'}
+                  ? 'खते, बियाणे आणि कीटकनाशके यांच्या साठा व विक्रीच्या नियमित नोंदी' 
+                  : 'Monthly stock and sales registers for Fertilizers, Seeds and Agrochemicals'}
               </p>
             </div>
           </div>
@@ -422,7 +422,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{isMr ? 'शासकीय परवाने व नूतनीकरण' : 'Statutory Licences'}</span>
+            <span>{isMr ? 'व्यवसाय परवाने माहिती' : 'Business Licences'}</span>
           </button>
 
           <button
@@ -466,7 +466,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
         </div>
       </div>
 
-      {/* Clean Print Header for Statutory Register PDF / Print */}
+      {/* Clean Print Header for Register PDF / Print */}
       <div className="hidden print:block mb-3 border-b-2 border-slate-900 pb-2">
         <div className="flex justify-between items-start">
           <div>
@@ -480,10 +480,10 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
           </div>
           <div className="text-right">
             <div className="text-xs font-black uppercase text-emerald-950">
-              {activeTab === 'fertilizer' && (isMr ? 'खते साठा व विक्री नोंदवही (Form O/L)' : 'Fertilizer Stock & Sales Register')}
+              {activeTab === 'fertilizer' && (isMr ? 'खते साठा व विक्री नोंदवही' : 'Fertilizer Stock & Sales Register')}
               {activeTab === 'seeds' && (isMr ? 'बियाणे आवक-जावक व विक्री नोंदवही' : 'Seeds Inward & Sales Register')}
-              {activeTab === 'pesticides' && (isMr ? 'कीटकनाशके साठा व विक्री नोंदवही' : 'Insecticides / Pesticides Register')}
-              {activeTab === 'licences' && (isMr ? 'शासकीय कृषी परवाने स्थिती' : 'Statutory Licences Summary')}
+              {activeTab === 'pesticides' && (isMr ? 'कीटकनाशके साठा व विक्री नोंदवही' : 'Pesticides Register')}
+              {activeTab === 'licences' && (isMr ? 'व्यवसाय परवाने स्थिती' : 'Business Licences Summary')}
             </div>
             <div className="text-[10px] text-slate-600">
               {isMr ? 'महिना / तारीख:' : 'Month / Date:'} {selectedMonth}
@@ -571,7 +571,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
                       {getTranslation('valid_upto', currentLang)}: <strong className="font-mono text-slate-900">{formatDate(lic.expiry_date)}</strong>
                     </div>
                     <div>
-                      {getTranslation('issuing_authority', currentLang)}: <span className="text-slate-700">{lic.issuing_authority || (isMr ? 'जिल्हा कृषी अधीक्षक अधिकारी' : 'District Agricultural Officer')}</span>
+                      {getTranslation('issuing_authority', currentLang)}: <span className="text-slate-700">{lic.issuing_authority || (isMr ? 'परवाना कार्यालय' : 'Licensing Office')}</span>
                     </div>
                   </div>
                 </div>
@@ -624,7 +624,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <span className="text-2xs font-semibold uppercase tracking-wider text-emerald-400">
-                  {isMr ? 'महाराष्ट्र खते (नियंत्रण) आदेश, १९८५ व FCO १९५७ अंतर्गत' : 'Fertilizer (Control) Order 1985 & FCO 1957 Statutory Register'}
+                  {isMr ? 'खते साठा व विक्री विवरण' : 'Fertilizer Stock & Sales Summary'}
                 </span>
                 <h2 className="text-base font-bold text-white">
                   {isMr ? 'खते मासिक साठा व विक्री नोंदवही' : 'Monthly Fertilizer Stock & Sales Register'}
@@ -728,16 +728,16 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             </table>
           </div>
 
-          {/* Statutory Signatures & Footer Note */}
+          {/* Signatures & Footer Note */}
           <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-end gap-6 text-xs text-slate-700">
             <div className="space-y-1">
               <div className="font-semibold text-slate-800">
-                {isMr ? 'वैधानिक घोषणापत्र:' : 'Statutory Declaration:'}
+                {isMr ? 'घोषणापत्र:' : 'Declaration:'}
               </div>
               <p className="text-[11px] text-slate-500 max-w-xl">
                 {isMr 
-                  ? 'सदर अहवालातील खते विक्री व साठा प्रत्यक्ष दुकानाच्या रोजकीर्द व बिलांशी तंतोतंत जुळणारा असून तो शासन नियमानुसार ठेवण्यात आलेला आहे.'
-                  : 'The above stock and sales report corresponds accurately to the counter sales and inventory registers maintained under FCO 1985.'}
+                  ? 'सदर अहवालातील खते विक्री व साठा प्रत्यक्ष दुकानाच्या रोजकीर्द व बिलांशी तंतोतंत जुळणारा आहे.'
+                  : 'The above stock and sales report corresponds accurately to the counter sales and inventory registers.'}
               </p>
             </div>
 
@@ -783,12 +783,12 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
-          {/* Statutory Formal Header for Register */}
+          {/* Formal Header for Register */}
           <div className="p-4 bg-emerald-950 text-white space-y-2 border-b border-emerald-900">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <span className="text-2xs font-semibold uppercase tracking-wider text-emerald-400">
-                  {isMr ? 'बियाणे कायदा, १९६६ व बियाणे (नियंत्रण) आदेश, १९८३ अंतर्गत' : 'Seeds Act 1966 & Seeds (Control) Order 1983 Statutory Register'}
+                  {isMr ? 'बियाणे साठा व विक्री विवरण' : 'Seed Stock & Sales Summary'}
                 </span>
                 <h2 className="text-base font-bold text-white">
                   {isMr ? 'बियाणे मासिक साठा व विक्री अहवाल' : 'Monthly Seeds Stock & Sales Register'}
@@ -892,16 +892,16 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
             </table>
           </div>
 
-          {/* Statutory Signatures & Footer Note */}
+          {/* Signatures & Footer Note */}
           <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-end gap-6 text-xs text-slate-700">
             <div className="space-y-1">
               <div className="font-semibold text-slate-800">
-                {isMr ? 'वैधानिक घोषणापत्र:' : 'Statutory Declaration:'}
+                {isMr ? 'घोषणापत्र:' : 'Declaration:'}
               </div>
               <p className="text-[11px] text-slate-500 max-w-xl">
                 {isMr 
-                  ? 'सदर बियाणे विक्री ही बियाणे कायदा, १९६६ मधील तरतुदींनुसार प्रमाणित व पॅकबंद स्थितीत करण्यात आलेली आहे.'
-                  : 'Seeds reported herein are sold strictly in sealed/certified containers in accordance with Seeds Act 1966.'}
+                  ? 'सदर बियाणे विक्री ही अधिकृत व पॅकबंद स्थितीत करण्यात आलेली आहे.'
+                  : 'Seeds reported herein are sold strictly in sealed/certified containers.'}
               </p>
             </div>
 
@@ -947,7 +947,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
-              <span>{isMr ? 'तपशीलवार विक्री नोंदवही (अनुसूची २)' : 'Detailed Sales Register (Schedule II)'}</span>
+              <span>{isMr ? 'तपशीलवार विक्री नोंदवही' : 'Detailed Sales Register'}</span>
             </button>
           </div>
 
@@ -979,9 +979,9 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
 
               <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
               <div className="p-4 bg-emerald-950 text-white font-bold text-xs flex justify-between items-center">
-                <span>{isMr ? 'कीटकनाशके आवक-जावक व साठा नोंदवही (Insecticide Stock Register)' : 'Statutory Insecticide / Agrochemical Stock Register'}</span>
+                <span>{isMr ? 'कीटकनाशके आवक-जावक व साठा नोंदवही' : 'Insecticide & Agrochemical Stock Register'}</span>
                 <span className="text-[11px] text-emerald-300">
-                  {isMr ? 'कीटकनाशके नियम, १९७१ अन्वये साठा तपासणीसाठी' : 'Insecticides Rules, 1971 Stock Verification'}
+                  {isMr ? 'मासिक साठा विवरण' : 'Monthly Stock Summary'}
                 </span>
               </div>
 
@@ -1064,16 +1064,16 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
                 </table>
               </div>
 
-              {/* Statutory Signatures & Footer Note */}
+              {/* Signatures & Footer Note */}
               <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-end gap-6 text-xs text-slate-700">
                 <div className="space-y-1">
                   <div className="font-semibold text-slate-800">
-                    {isMr ? 'वैधानिक घोषणापत्र:' : 'Statutory Declaration:'}
+                    {isMr ? 'घोषणापत्र:' : 'Declaration:'}
                   </div>
                   <p className="text-[11px] text-slate-500 max-w-xl">
                     {isMr 
-                      ? 'सदर कीटकनाशके ही कीटकनाशके कायदा, १९६८ व नियम, १९७१ मधील सर्व वैधानिक तरतुदींनुसार नोंदणीकृत व प्रमाणित आहेत.'
-                      : 'All insecticides/agrochemicals accounted above comply with Insecticides Act 1968 and Rules 1971.'}
+                      ? 'सदर कीटकनाशके विक्री ही मूळ पॅकिंगमध्ये अधिकृतरीत्या करण्यात आलेली आहे.'
+                      : 'All agrochemicals accounted above are genuine, sealed, and verified.'}
                   </p>
                 </div>
 
@@ -1091,7 +1091,7 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
           </div>
           )}
 
-          {/* Sub-view 2: Detailed Retail Sales Register (Schedule II) */}
+          {/* Sub-view 2: Detailed Retail Sales Register */}
           {pesticideSubView === 'sales' && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 no-print">
@@ -1111,9 +1111,9 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
 
               <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden print:border-none print:shadow-none">
               <div className="p-4 bg-emerald-950 text-white font-bold text-xs flex justify-between items-center">
-                <span>{isMr ? 'कीटकनाशके नियम, १९७१ - अनुसूची २ अन्वये वैधानिक नोंदवही' : 'Statutory Pesticides Register - Schedule II (Insecticide Act, 1971)'}</span>
+                <span>{isMr ? 'कीटकनाशके सविस्तर विक्री नोंदवही' : 'Pesticides Detailed Sales Register'}</span>
                 <span className="text-[11px] text-emerald-300">
-                  {isMr ? 'कृषी विभाग तपासणीसाठी प्रमाणित' : 'Certified for Agricultural Inspection'}
+                  {isMr ? 'दुकान विक्री नोंदीनुसार' : 'Verified Counter Sales Records'}
                 </span>
               </div>
 
@@ -1169,16 +1169,16 @@ export const Compliance: React.FC<ComplianceProps> = ({ currentLang }) => {
                 </table>
               </div>
 
-              {/* Statutory Signatures & Footer Note */}
+              {/* Signatures & Footer Note */}
               <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-end gap-6 text-xs text-slate-700">
                 <div className="space-y-1">
                   <div className="font-semibold text-slate-800">
-                    {isMr ? 'वैधानिक घोषणापत्र:' : 'Statutory Declaration:'}
+                    {isMr ? 'घोषणापत्र:' : 'Declaration:'}
                   </div>
                   <p className="text-[11px] text-slate-500 max-w-xl">
                     {isMr 
-                      ? 'सदर कीटकनाशके ही कीटकनाशके कायदा, १९६८ व नियम, १९७१ मधील सर्व वैधानिक तरतुदींनुसार नोंदणीकृत व प्रमाणित आहेत.'
-                      : 'All insecticides/agrochemicals accounted above comply with Insecticides Act 1968 and Rules 1971.'}
+                      ? 'सदर कीटकनाशके विक्री ही मूळ पॅकिंगमध्ये अधिकृतरीत्या करण्यात आलेली आहे.'
+                      : 'All agrochemicals accounted above are genuine, sealed, and verified.'}
                   </p>
                 </div>
 

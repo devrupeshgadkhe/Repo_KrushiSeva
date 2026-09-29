@@ -77,7 +77,7 @@ INSERT OR IGNORE INTO suppliers (id, supplier_code, name, company, contact_perso
 
 -- Products
 INSERT OR IGNORE INTO products (id, product_code, barcode, name, name_mr, name_hi, category, subcategory, brand, company, unit, pack_size, mrp, purchase_rate, selling_rate, dealer_rate, gst_rate, hsn_code, batch_required, expiry_required, min_stock, max_stock, reorder_level, fertilizer_grade, npk_ratio, seed_variety, toxicity_class, cib_registration_no, description, active, created_at) VALUES 
-(1, 'PRD-001', '8901001001', 'Neem Coated Urea 45kg', 'निम कोटेड युरिया ४५ किलो', 'नीम लेपित यूरिया ४५ किग्रा', 'Fertilizer', 'Nitrogenous', 'IFFCO', 'IFFCO India', 'Bag', '45 Kg', 266.50, 245.00, 266.50, 255.00, 5, '31021000', 1, 0, 50, 500, 80, 'Urea 46% N', '46:0:0', '', '', '', 'Government subsidized Neem Coated Urea', 1, datetime('now')),
+(1, 'PRD-001', '8901001001', 'Neem Coated Urea 45kg', 'निम कोटेड युरिया ४५ किलो', 'नीम लेपित यूरिया ४५ किग्रा', 'Fertilizer', 'Nitrogenous', 'IFFCO', 'IFFCO India', 'Bag', '45 Kg', 266.50, 245.00, 266.50, 255.00, 5, '31021000', 1, 0, 50, 500, 80, 'Urea 46% N', '46:0:0', '', '', '', 'Neem Coated Urea for Agriculture', 1, datetime('now')),
 (2, 'PRD-002', '8901001002', 'Mahadhan DAP 18:46:0 50kg', 'महाधन डीएपी १८:४६:० ५० किलो', 'महाधन डीएपी १८:४६:० ५० किग्रा', 'Fertilizer', 'Phosphatic', 'Mahadhan', 'Smartchem Technologies', 'Bag', '50 Kg', 1350.00, 1280.00, 1350.00, 1310.00, 5, '31053000', 1, 0, 30, 400, 50, '18:46:0', '18:46:0', '', '', '', 'Di-Ammonium Phosphate High Grade Fertilizer', 1, datetime('now')),
 (3, 'PRD-003', '8901001003', 'Mahadhan 10:26:26 NPK 50kg', 'महाधन १०:२६:२६ एनपीके ५० किलो', 'महाधन १०:२६:२६ ५० किग्रा', 'Fertilizer', 'Complex', 'Mahadhan', 'Smartchem Technologies', 'Bag', '50 Kg', 1470.00, 1390.00, 1470.00, 1420.00, 5, '31052000', 1, 0, 25, 300, 40, '10:26:26', '10:26:26', '', '', '', 'Balanced complex fertilizer for sugarcane and vegetables', 1, datetime('now')),
 (4, 'PRD-004', '8901001004', 'FMC Coragen 18.5% SC 60ml', 'एफएमसी कोराजन ६० मिली', 'एफएमसी कोराजन ६० मिली', 'Insecticide', 'Anthranilic Diamide', 'FMC', 'FMC India Pvt Ltd', 'Bottle', '60 ml', 980.00, 840.00, 930.00, 880.00, 18, '38089190', 1, 1, 15, 100, 20, '', '', '', 'Green (Cautionary)', 'CIR-65432/2012', 'Systemic insecticide for stem borer, fruit borer in sugarcane and soyabean', 1, datetime('now')),
@@ -129,9 +129,9 @@ INSERT OR IGNORE INTO customer_ledger (id, customer_id, date, reference_type, re
 
 -- Licences Compliance
 INSERT OR IGNORE INTO licences (id, licence_type, licence_no, holder_name, issuing_authority, issue_date, expiry_date, notes) VALUES 
-(1, 'Fertilizer', 'FL/PUN/2022/8492', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'जिल्हा अधीक्षक कृषी अधिकारी, कृषी विभाग', '2022-05-10', '2027-05-09', 'खते विक्री व साठवणूक अधिकृत परवाना (Class A)'),
-(2, 'Seed', 'SL/PUN/2021/4102', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'कृषी संचालक (निविष्ठा व गुणनियंत्रण), महाराष्ट्र राज्य', '2021-06-15', '2026-11-30', 'बियाणे परवाना (लवकर नूतनीकरण आवश्यक - Alert Active)'),
-(3, 'Insecticide', 'IL/PUN/2023/1932', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'कृषी उपसंचालक व गुणनियंत्रण निरीक्षक, कृषी विभाग', '2023-08-01', '2028-07-31', 'कीटकनाशक व बुरशीनाशक विक्री परवाना');
+(1, 'Fertilizer', 'FL/PUN/2022/8492', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'परवाना कार्यालय (Licence Office)', '2022-05-10', '2027-05-09', 'खते विक्री व साठवणूक परवाना'),
+(2, 'Seed', 'SL/PUN/2021/4102', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'परवाना कार्यालय (Licence Office)', '2021-06-15', '2026-11-30', 'बियाणे विक्री परवाना'),
+(3, 'Insecticide', 'IL/PUN/2023/1932', 'कृषी सेवा केंद्र (अधिकृत परवानाधारक)', 'परवाना कार्यालय (Licence Office)', '2023-08-01', '2028-07-31', 'कीटकनाशक विक्री परवाना');
 
 -- Sample Initial Cash In Hand
 INSERT OR IGNORE INTO cash_transactions (id, date_time, type, category, amount, balance_after, reference_id, description, user_name) VALUES 
