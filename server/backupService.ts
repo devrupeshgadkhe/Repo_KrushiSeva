@@ -476,25 +476,23 @@ class GoogleDriveBackupService {
       const shouldCompress = (process.env.BACKUP_COMPRESS ?? 'false').toLowerCase() === 'true';
       if (shouldCompress) {
         const compressed = zlib.gzipSync(encryptedPayload);
-        const fileName = `${firmName}_${dateStamp}.enc.gz`;
+        const fileName = `${firmName}_Database_Backup_${dateStamp}.enc.gz`;
         return { buffer: compressed, fileName, isEncrypted: true };
       }
-      const fileName = `${firmName}_${dateStamp}.enc.json`;
+      const fileName = `${firmName}_Database_Backup_${dateStamp}.enc.json`;
       return { buffer: encryptedPayload, fileName, isEncrypted: true };
     }
 
-    // Standard JSON backup (named with the Firm's name)
+    // Standard JSON backup (named with Kendra name + Database_Backup + DateStamp)
     const shouldCompress = (process.env.BACKUP_COMPRESS ?? 'false').toLowerCase() === 'true';
-    const includeDate = (process.env.BACKUP_INCLUDE_DATE ?? 'true').toLowerCase() === 'true';
-
     if (shouldCompress) {
       const compressed = zlib.gzipSync(jsonBuffer);
-      const fileName = includeDate ? `${firmName}_${dateStamp}.json.gz` : `${firmName}.json.gz`;
+      const fileName = `${firmName}_Database_Backup_${dateStamp}.json.gz`;
       return { buffer: compressed, fileName, isEncrypted: false };
     }
 
-    // Raw formatted .json backup as requested: <FirmName>_<Date>.json or <FirmName>.json
-    const fileName = includeDate ? `${firmName}_${dateStamp}.json` : `${firmName}.json`;
+    // Default: <FirmName>_Database_Backup_<YYYY-MM-DD_HH-mm-ss>.json
+    const fileName = `${firmName}_Database_Backup_${dateStamp}.json`;
     return { buffer: jsonBuffer, fileName, isEncrypted: false };
   }
 

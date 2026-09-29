@@ -165,7 +165,23 @@ class CloudBackupService {
       const totalRecords = Object.values(backupJSON.tableCounts).reduce((a, b) => a + b, 0);
       const jsonContent = JSON.stringify(backupJSON, null, 2);
       const timestampIso = new Date().toISOString();
-      const filename = `krushi_seva_erp_backup_${timestampIso.slice(0, 10)}.json`;
+
+      // Extract registered Kendra / Shop Name from business_settings
+      let shopName = 'Krushi_Seva_ERP';
+      try {
+        const settings = (backupJSON.tables as any)?.['business_settings'];
+        if (Array.isArray(settings) && settings.length > 0) {
+          const raw = settings[0].shop_name || settings[0].shop_name_mr;
+          if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+            shopName = raw.trim().replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, '_');
+          }
+        }
+      } catch {}
+
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const dateStamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+      const filename = `${shopName}_Database_Backup_${dateStamp}.json`;
 
       // 2. Cache in local storage for fast offline reference
       try {
