@@ -647,29 +647,50 @@ class GoogleDriveBackupService {
 
       if (gasUrl && gasUrl.startsWith('http')) {
         console.log(`[GoogleDriveBackup] Uploading ${fileName} via Google Apps Script Web App...`);
-        const res = await fetch(gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            action: 'save_database_backup',
-            filename: fileName,
-            folderId: effectiveFolderId,
-            content: buffer.toString('utf8'),
-            isEncrypted,
-          }),
-        });
-        const resText = await res.text();
-        let jsonRes: any = {};
         try {
-          jsonRes = JSON.parse(resText);
-        } catch {}
+          const res = await fetch(gasUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'save_database_backup',
+              filename: fileName,
+              folderId: effectiveFolderId,
+              content: buffer.toString('utf8'),
+              isEncrypted,
+            }),
+            redirect: 'follow',
+          });
+          const resText = await res.text();
+          let jsonRes: any = {};
+          try {
+            jsonRes = JSON.parse(resText);
+          } catch {}
 
-        if (!res.ok || jsonRes.success === false) {
-          throw new Error(jsonRes.error || `Apps Script upload failed: HTTP ${res.status}`);
+          if (!res.ok || jsonRes.success === false) {
+            if (res.status === 401 || res.status === 403) {
+              console.info(
+                `[GoogleDriveBackup] Notice: Apps Script returned HTTP ${res.status}. Local backup is safely stored at ./data/backups/${fileName}. (To enable Drive upload, ensure Apps Script deployment has "Who has access: Anyone").`
+              );
+              uploadStatus = 'LOCAL_SAVED';
+              driveFileId = 'local_disk_safe_auth_pending';
+            } else {
+              throw new Error(jsonRes.error || `Apps Script upload failed: HTTP ${res.status}`);
+            }
+          } else {
+            driveFileId = jsonRes.id || 'gas_uploaded';
+            console.log(`[GoogleDriveBackup] Successfully uploaded ${fileName} to Google Drive via Apps Script (ID: ${driveFileId})`);
+          }
+        } catch (fetchErr: any) {
+          if (fetchErr.message?.includes('401') || fetchErr.message?.includes('403')) {
+            console.info(
+              `[GoogleDriveBackup] Notice: Cloud upload authorization pending (${fetchErr.message}). Local backup safely preserved.`
+            );
+            uploadStatus = 'LOCAL_SAVED';
+            driveFileId = 'local_disk_safe_auth_pending';
+          } else {
+            throw fetchErr;
+          }
         }
-
-        driveFileId = jsonRes.id || 'gas_uploaded';
-        console.log(`[GoogleDriveBackup] Successfully uploaded ${fileName} to Google Drive via Apps Script (ID: ${driveFileId})`);
       } else {
         // Direct Service Account Google Drive API
         try {
