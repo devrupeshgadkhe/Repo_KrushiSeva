@@ -51,11 +51,26 @@ class SQLiteDatabaseManager {
         }
       }
 
-      // 2. Fallback to locateFile (works for Web / Dev server)
+      // 2. Fallback to locateFile (works for Web / Dev server, with Node runtime fallback)
       if (!SQL) {
-        SQL = await initSqlJs({
-          locateFile: () => getSqlWasmUrl()
-        });
+        if (typeof window === 'undefined') {
+          try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const wasmPath = path.join(process.cwd(), 'public', 'sql-wasm.wasm');
+            if (fs.existsSync(wasmPath)) {
+              const wasmBinary = fs.readFileSync(wasmPath);
+              SQL = await initSqlJs({ wasmBinary });
+            }
+          } catch {
+            // fallback to locateFile
+          }
+        }
+        if (!SQL) {
+          SQL = await initSqlJs({
+            locateFile: () => getSqlWasmUrl()
+          });
+        }
       }
 
       // Try loading existing database from IndexedDB
@@ -119,7 +134,8 @@ class SQLiteDatabaseManager {
       'ALTER TABLE products ADD COLUMN toxicity_class TEXT;',
       'ALTER TABLE products ADD COLUMN cib_registration_no TEXT;',
       'ALTER TABLE products ADD COLUMN dealer_rate REAL DEFAULT 0;',
-      'ALTER TABLE products ADD COLUMN active INTEGER NOT NULL DEFAULT 1;',
+      'ALTER TABLE product_batches ADD COLUMN received_qty REAL DEFAULT 0;',
+      'ALTER TABLE product_batches ADD COLUMN sold_qty REAL DEFAULT 0;',
       'ALTER TABLE purchases ADD COLUMN purchase_date TEXT;',
       'UPDATE purchases SET purchase_date = invoice_date WHERE purchase_date IS NULL;',
       "UPDATE users SET name = (SELECT COALESCE(proprietor, owner_name, 'संचालक (Admin)') FROM business_settings WHERE id = 1) WHERE (id = 1 OR role = 'admin') AND (name LIKE '%संजय पाटील%' OR name LIKE '%Sanjay Patil%');",

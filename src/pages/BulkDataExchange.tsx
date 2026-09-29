@@ -14,11 +14,12 @@ import {
   Check, 
   X,
   FileCheck,
+  Building2,
   Info
 } from 'lucide-react';
 import { AppLanguage, ProductCategory } from '../types';
 import { getTranslation } from '../i18n';
-import { formatINR } from '../utils/formatters';
+import { formatINR, safeNumber, parseExcelDate } from '../utils/formatters';
 import { dbService } from '../services/api';
 import { useFeedback } from '../components/common/FeedbackContext';
 
@@ -27,10 +28,51 @@ interface BulkDataExchangeProps {
   onRefreshData?: () => void;
 }
 
-type TabType = 'products' | 'farmers' | 'sales';
+type TabType = 'products' | 'farmers' | 'suppliers' | 'sales';
+
+// Category normalization supporting all agriculture categories & Marathi keywords
+export const normalizeProductCategory = (cat: any): ProductCategory => {
+  const c = String(cat || '').trim().toLowerCase();
+  if (c.includes('fert') || c.includes('खत') || c.includes('उर्वरक')) {
+    if (c.includes('bio') || c.includes('सेंद्रिय') || c.includes('जैविक')) return 'Bio Fertilizers';
+    return 'Fertilizers';
+  }
+  if (c.includes('fungi') || c.includes('बुरशी')) return 'Fungicide';
+  if (c.includes('herbi') || c.includes('weed') || c.includes('तण')) return 'Herbicide';
+  if (c.includes('insect') || c.includes('कीटक')) return 'Insecticide';
+  if (c.includes('pest') || c.includes('औषध')) return 'Pesticides';
+  if (c.includes('seed') || c.includes('बिया') || c.includes('बीज')) return 'Seeds';
+  if (c.includes('micro') || c.includes('सूक्ष्म') || c.includes('zinc') || c.includes('boron')) return 'Micronutrients';
+  if (c.includes('pgr') || c.includes('संजीवक') || c.includes('growth') || c.includes('tonic') || c.includes('टॉनिक')) return 'PGR';
+  if (c.includes('spray') || c.includes('tool') || c.includes('यंत्र') || c.includes('औजार') || c.includes('उपकरण')) return 'Sprayers & Tools';
+  if (c.includes('bio') || c.includes('organic') || c.includes('सेंद्रिय') || c.includes('जैविक')) return 'Bio Fertilizers';
+  if (c === 'other' || c === 'इतर') return 'Other';
+  return 'Fertilizers';
+};
+
+// Flexible column value extractor that matches case, whitespace, brackets, punctuation, and language variations
+const getVal = (row: any, ...keys: string[]): any => {
+  if (!row) return '';
+  for (const k of keys) {
+    if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+      return row[k];
+    }
+  }
+  const rowKeys = Object.keys(row);
+  for (const target of keys) {
+    const cleanTarget = target.toLowerCase().replace(/[^a-z0-9\u0900-\u097F]/g, '');
+    for (const rk of rowKeys) {
+      const cleanRk = rk.toLowerCase().replace(/[^a-z0-9\u0900-\u097F]/g, '');
+      if (cleanRk === cleanTarget && row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') {
+        return row[rk];
+      }
+    }
+  }
+  return '';
+};
 
 export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang, onRefreshData }) => {
-  const { showToast, showConfirm } = useFeedback();
+  const { showToast } = useFeedback();
   const isMr = currentLang === 'mr';
   const [activeTab, setActiveTab] = useState<TabType>('products');
   const [loading, setLoading] = useState(false);
@@ -54,22 +96,41 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
     setLoading(true);
     try {
       const products = await dbService.getProducts('', '');
-      const exportData = products.map((p) => ({
-        'Product Code': p.product_code,
-        'Product Name': p.name,
-        'Marathi / Local Name': p.name_mr || p.name,
-        'Category': p.category,
-        'Brand / Company': p.brand || p.company || 'General',
-        'HSN Code': p.hsn_code || '0000',
-        'Unit': p.unit || 'Bags',
-        'Pack Size': p.pack_size || '1',
-        'Purchase Rate (Rs)': p.purchase_rate,
-        'MRP (Rs)': p.mrp,
-        'Selling Rate (Rs)': p.selling_rate,
-        'GST Rate (%)': p.gst_rate,
-        'Low Stock Alert': p.low_stock_alert,
-        'Barcode': p.barcode || '',
-        'Technical Name': p.technical_name || '',
+      const exportData = await Promise.all(products.map(async (p) => {
+        let opnStock = 0;
+        let batchNo = 'OPN-01';
+        let expiryDate = '2028-12-31';
+        try {
+          const batches = await dbService.getBatchesForProduct(p.id);
+          if (batches.length > 0) {
+            opnStock = batches.reduce((sum, b) => sum + (b.current_qty || 0), 0);
+            batchNo = batches[0].batch_number || 'OPN-01';
+            expiryDate = batches[0].expiry_date || '2028-12-31';
+          }
+        } catch {
+          // ignore batch lookup error
+        }
+
+        return {
+          'Product Code': p.product_code,
+          'Product Name': p.name,
+          'Marathi / Local Name': p.name_mr || p.name,
+          'Category': p.category,
+          'Brand / Company': p.brand || p.company || 'General',
+          'HSN Code': p.hsn_code || '0000',
+          'Unit': p.unit || 'Bags',
+          'Pack Size': p.pack_size || '1',
+          'Purchase Rate (Rs)': p.purchase_rate,
+          'MRP (Rs)': p.mrp,
+          'Selling Rate (Rs)': p.selling_rate,
+          'GST Rate (%)': p.gst_rate,
+          'Low Stock Alert': p.low_stock_alert || p.min_stock || 10,
+          'Barcode': p.barcode || '',
+          'Technical Name': p.technical_name || '',
+          'Opening Stock Qty': opnStock,
+          'Opening Batch No': batchNo,
+          'Expiry Date (YYYY-MM-DD)': expiryDate,
+        };
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -90,11 +151,15 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
       const farmers = await dbService.getCustomers('');
       const exportData = farmers.map((f) => ({
         'Farmer Name': f.name,
+        'Marathi Name': f.name_mr || f.name,
         'Mobile': f.mobile,
         'Village': f.village || '',
+        'Taluka': f.taluka || '',
+        'District': f.district || '',
         'Aadhar No': f.aadhar_no || '',
         '7/12 Land (Acres)': f.land_acreage || 0,
-        'Credit Limit (Rs)': f.credit_limit || 0,
+        'Major Crops': f.crops_grown || '',
+        'Credit Limit (Rs)': f.credit_limit || 50000,
         'Current Khata Balance (Rs)': f.current_balance || 0,
       }));
 
@@ -103,6 +168,37 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Farmers_Directory');
       XLSX.writeFile(workbook, `KrushiSeva_Farmers_${new Date().toISOString().slice(0, 10)}.xlsx`);
       showToast(isMr ? `${exportData.length} शेतकरी खाते एक्सेलमध्ये एक्सपोर्ट झाले.` : `Exported ${exportData.length} farmers to Excel.`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Export failed', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportSuppliers = async () => {
+    setLoading(true);
+    try {
+      const suppliers = await dbService.getSuppliers('');
+      const exportData = suppliers.map((s) => ({
+        'Supplier Code': s.supplier_code,
+        'Company / Supplier Name': s.name,
+        'Contact Person': s.contact_person || '',
+        'Mobile': s.mobile,
+        'Email': s.email || '',
+        'GSTIN': s.gstin || '',
+        'Licence No': s.licence_no || '',
+        'Address': s.address || '',
+        'City': s.city || 'पुणे',
+        'State': s.state || 'Maharashtra',
+        'Credit Limit (Rs)': s.credit_limit || 500000,
+        'Current Balance (Rs)': s.current_balance || 0,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Suppliers_Master');
+      XLSX.writeFile(workbook, `KrushiSeva_Suppliers_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      showToast(isMr ? `${exportData.length} सप्लायर एक्सेलमध्ये एक्सपोर्ट झाले.` : `Exported ${exportData.length} suppliers to Excel.`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Export failed', 'error');
     } finally {
@@ -159,6 +255,7 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           'Product Name': 'Urea 46% Nitrogen',
           'Marathi / Local Name': 'युरिया ४६% खत',
           'Category': 'Fertilizers',
+          'Subcategory': 'Nitrogenous Fertilizers',
           'Brand / Company': 'RCF',
           'HSN Code': '3102',
           'Unit': 'Bags',
@@ -166,10 +263,17 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           'Purchase Rate (Rs)': 242,
           'MRP (Rs)': 266.50,
           'Selling Rate (Rs)': 266.50,
+          'Dealer Rate (Rs)': 250,
           'GST Rate (%)': 5,
           'Low Stock Alert': 20,
           'Barcode': '8901234567890',
           'Technical Name': 'Nitrogen 46% Prilled',
+          'Fertilizer Grade': '46-0-0',
+          'NPK Ratio': '46:0:0',
+          'Seed Variety': '',
+          'Toxicity Class': '',
+          'CIB Registration No': '',
+          'Description': 'Standard agricultural nitrogen fertilizer',
           'Opening Stock Qty': 100,
           'Opening Batch No': 'RC-9941',
           'Expiry Date (YYYY-MM-DD)': '2028-12-31',
@@ -179,6 +283,7 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           'Product Name': 'Mahyco Hybrid Cotton Seeds 7351',
           'Marathi / Local Name': 'माहिको बीटी कापूस बियाणे',
           'Category': 'Seeds',
+          'Subcategory': 'Cotton Seeds',
           'Brand / Company': 'Mahyco',
           'HSN Code': '1209',
           'Unit': 'Packets',
@@ -186,10 +291,17 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           'Purchase Rate (Rs)': 810,
           'MRP (Rs)': 864,
           'Selling Rate (Rs)': 864,
+          'Dealer Rate (Rs)': 825,
           'GST Rate (%)': 0,
           'Low Stock Alert': 15,
-          'Barcode': '',
+          'Barcode': '8909876543210',
           'Technical Name': 'BG-II Cotton Hybrid Seed',
+          'Fertilizer Grade': '',
+          'NPK Ratio': '',
+          'Seed Variety': 'MRC-7351 BG-II',
+          'Toxicity Class': '',
+          'CIB Registration No': '',
+          'Description': 'High yielding bollworm resistant seeds',
           'Opening Stock Qty': 50,
           'Opening Batch No': 'MC-4512',
           'Expiry Date (YYYY-MM-DD)': '2027-06-30',
@@ -199,6 +311,7 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           'Product Name': 'Coragen Insecticide',
           'Marathi / Local Name': 'कोराजन कीटकनाशक',
           'Category': 'Pesticides',
+          'Subcategory': 'Insecticides',
           'Brand / Company': 'FMC',
           'HSN Code': '3808',
           'Unit': 'Bottles',
@@ -206,10 +319,17 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           'Purchase Rate (Rs)': 1680,
           'MRP (Rs)': 1950,
           'Selling Rate (Rs)': 1890,
+          'Dealer Rate (Rs)': 1750,
           'GST Rate (%)': 18,
           'Low Stock Alert': 10,
-          'Barcode': '',
+          'Barcode': '8901122334455',
           'Technical Name': 'Chlorantraniliprole 18.5% SC',
+          'Fertilizer Grade': '',
+          'NPK Ratio': '',
+          'Seed Variety': '',
+          'Toxicity Class': 'Green (Safe)',
+          'CIB Registration No': 'CIR-64522/2010',
+          'Description': 'Broad spectrum insecticide for caterpillar control',
           'Opening Stock Qty': 25,
           'Opening Batch No': 'FM-8821',
           'Expiry Date (YYYY-MM-DD)': '2028-04-15',
@@ -220,24 +340,73 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
       fileName = 'KrushiSeva_Farmers_Template.xlsx';
       sampleData = [
         {
+          'Farmer Code': 'CUST-1001',
           'Farmer Name': 'Ramesh Baburao Patil',
+          'Marathi Name': 'रमेश बाबुराव पाटील',
           'Mobile': '9822112233',
+          'Alt Mobile': '9822112234',
           'Village': 'Sangvi',
+          'Taluka': 'Baramati',
+          'District': 'Pune',
+          'Address': 'At Post Sangvi, Near Grampanchayat',
+          'Pincode': '413102',
           'Aadhar No': '4412-8874-9912',
           '7/12 Land (Acres)': 5.5,
           'Major Crops': 'Soybean, Cotton, Wheat',
           'Credit Limit (Rs)': 50000,
           'Opening Balance (Rs)': 4500,
+          'Notes': 'Regular customer',
         },
         {
+          'Farmer Code': 'CUST-1002',
           'Farmer Name': 'Ganesh Dnyaneshwar Shinde',
+          'Marathi Name': 'गणेश ज्ञानेश्वर शिंदे',
           'Mobile': '9890112244',
+          'Alt Mobile': '',
           'Village': 'Nimgaon',
+          'Taluka': 'Baramati',
+          'District': 'Pune',
+          'Address': 'Shinde Vasti, Nimgaon',
+          'Pincode': '413102',
           'Aadhar No': '',
           '7/12 Land (Acres)': 8.0,
           'Major Crops': 'Sugarcane, Onion',
           'Credit Limit (Rs)': 75000,
           'Opening Balance (Rs)': 0,
+          'Notes': 'Timely payment',
+        }
+      ];
+    } else if (activeTab === 'suppliers') {
+      sheetName = 'Suppliers_Template';
+      fileName = 'KrushiSeva_Suppliers_Template.xlsx';
+      sampleData = [
+        {
+          'Supplier Code': 'SUP-101',
+          'Company / Supplier Name': 'Deepak Fertilisers Ltd',
+          'Contact Person': 'Ganesh Shinde',
+          'Mobile': '9822100200',
+          'Email': 'deepak.agro@smartchem.com',
+          'GSTIN': '27AAACD1111A1Z1',
+          'Licence No': 'FL/PUN/8821',
+          'Address': 'Sai Chambers, Station Road',
+          'City': 'पुणे',
+          'State': 'Maharashtra',
+          'Credit Limit (Rs)': 1000000,
+          'Opening Balance (Rs)': 85000,
+        },
+        {
+          'Supplier Code': 'SUP-102',
+          'Company / Supplier Name': 'Mahadhan Agro Distributors',
+          'Contact Person': 'Sunil Mohite',
+          'Mobile': '9850112244',
+          'Email': 'mahadhan.dist@gmail.com',
+          'GSTIN': '27BBDCE2222B2Z2',
+          'Licence No': 'FL/BAR/4412',
+          'Address': 'MIDC Phase II',
+          'City': 'बारामती',
+          'State': 'Maharashtra',
+          'Credit Limit (Rs)': 800000,
+          'Opening Balance (Rs)': 42500,
         }
       ];
     } else {
@@ -294,10 +463,50 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
 
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const workbook = XLSX.read(bstr, { type: 'binary', cellDates: true });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+        const buffer = evt.target?.result;
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+        
+        // Find best sheet matching the active tab or fallback to sheet with data
+        let targetSheetName = workbook.SheetNames[0];
+        let foundMatch = false;
+        for (const name of workbook.SheetNames) {
+          const lower = name.toLowerCase();
+          if (activeTab === 'products' && (lower.includes('product') || lower.includes('उत्पादन') || lower.includes('item'))) {
+            targetSheetName = name;
+            foundMatch = true;
+            break;
+          }
+          if (activeTab === 'farmers' && (lower.includes('farmer') || lower.includes('cust') || lower.includes('शेतकरी') || lower.includes('ग्राहक'))) {
+            targetSheetName = name;
+            foundMatch = true;
+            break;
+          }
+          if (activeTab === 'suppliers' && (lower.includes('supp') || lower.includes('सप्लायर') || lower.includes('पुरवठादार') || lower.includes('कंपनी'))) {
+            targetSheetName = name;
+            foundMatch = true;
+            break;
+          }
+          if (activeTab === 'sales' && (lower.includes('sale') || lower.includes('विक्री') || lower.includes('bill') || lower.includes('invoice'))) {
+            targetSheetName = name;
+            foundMatch = true;
+            break;
+          }
+        }
+
+        if (!foundMatch) {
+          for (const name of workbook.SheetNames) {
+            const ws = workbook.Sheets[name];
+            if (ws && ws['!ref']) {
+              const testJson = XLSX.utils.sheet_to_json(ws, { defval: '' });
+              if (testJson.length > 0) {
+                targetSheetName = name;
+                break;
+              }
+            }
+          }
+        }
+
+        const worksheet = workbook.Sheets[targetSheetName];
         const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
         if (!rawJson || rawJson.length === 0) {
@@ -309,73 +518,130 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
         // Validate and standardize fields based on active tab
         const validated = rawJson.map((row, idx) => {
           if (activeTab === 'products') {
-            const name = (row['Product Name'] || row['Name'] || row['नाव'] || row['उत्पादन नाव'] || '').toString().trim();
-            const category = (row['Category'] || row['विभाग'] || 'Fertilizers').toString().trim();
-            const purchaseRate = parseFloat(row['Purchase Rate (Rs)'] || row['Purchase Rate'] || row['खरेदी दर'] || 0) || 0;
-            const sellingRate = parseFloat(row['Selling Rate (Rs)'] || row['Selling Rate'] || row['विक्री दर'] || 0) || 0;
-            const mrp = parseFloat(row['MRP (Rs)'] || row['MRP'] || row['एमआरपी'] || sellingRate) || sellingRate;
-            const unit = (row['Unit'] || row['एकक'] || 'Bags').toString().trim();
-            const packSize = (row['Pack Size'] || row['पॅक साईज'] || '1').toString().trim();
-            const openingStock = parseFloat(row['Opening Stock Qty'] || row['Opening Stock'] || row['आरंभी साठा'] || 0) || 0;
-            const batchNo = (row['Opening Batch No'] || row['Batch No'] || row['बॅच'] || `OPN-${Math.floor(100 + Math.random() * 900)}`).toString().trim();
-            const expiryDate = (row['Expiry Date (YYYY-MM-DD)'] || row['Expiry Date'] || '2028-12-31').toString().trim();
+            const name = String(getVal(row, 'Product Name', 'Name', 'ProductName', 'Item Name', 'नाव', 'उत्पादन नाव', 'उत्पादन')).trim();
+            const category = normalizeProductCategory(getVal(row, 'Category', 'विभाग', 'वर्ग', 'Product Category'));
+            const purchaseRate = safeNumber(getVal(row, 'Purchase Rate (Rs)', 'Purchase Rate', 'खरेदी दर', 'Purchase Price', 'purchase_rate'), 0);
+            const sellingRate = safeNumber(getVal(row, 'Selling Rate (Rs)', 'Selling Rate', 'विक्री दर', 'Selling Price', 'selling_rate'), purchaseRate || 0);
+            const mrp = safeNumber(getVal(row, 'MRP (Rs)', 'MRP', 'एमआरपी', 'mrp'), sellingRate || purchaseRate || 0);
+            const unit = String(getVal(row, 'Unit', 'एकक', 'UOM', 'unit') || 'Bags').trim();
+            const packSize = String(getVal(row, 'Pack Size', 'पॅक साईज', 'Packing', 'पॅकिंग', 'pack_size') || '1').trim();
+            const openingStock = safeNumber(getVal(row, 'Opening Stock Qty', 'Opening Stock', 'Stock', 'आरंभी साठा', 'opening_stock', 'Qty'), 0);
+            const batchNo = String(getVal(row, 'Opening Batch No', 'Batch No', 'Batch', 'बॅच', 'बॅच क्र', 'batch_number') || 'OPN-01').trim();
+            const expiryDate = parseExcelDate(getVal(row, 'Expiry Date (YYYY-MM-DD)', 'Expiry Date', 'Expiry', 'एक्सपायरी तारीख', 'expiry_date'), '2028-12-31');
+
+            const brand = String(getVal(row, 'Brand / Company', 'Brand', 'Company', 'कंपनी', 'ब्रँड', 'brand', 'company') || 'General').trim();
+            const hsnCode = String(getVal(row, 'HSN Code', 'HSN', 'एचएसएन', 'hsn_code') || '0000').trim();
+            const gstRate = safeNumber(getVal(row, 'GST Rate (%)', 'GST %', 'GST', 'जीएसटी %', 'gst_rate'), 5);
+            const lowStockAlert = safeNumber(getVal(row, 'Low Stock Alert', 'Min Stock', 'Minimum Stock', 'किमान साठा', 'low_stock_alert'), 10);
+            const barcode = String(getVal(row, 'Barcode', 'Bar Code', 'बारकोड', 'barcode')).trim();
+            const technicalName = String(getVal(row, 'Technical Name', 'Technical Content', 'Technical', 'तांत्रिक नाव', 'घटक', 'technical_name')).trim();
+            const nameMr = String(getVal(row, 'Marathi / Local Name', 'Local Name', 'Marathi Name', 'नाव (मराठी)', 'name_mr') || name).trim();
+            const subcategory = String(getVal(row, 'Subcategory', 'उपविभाग', 'subcategory')).trim();
+            const dealerRate = safeNumber(getVal(row, 'Dealer Rate (Rs)', 'Dealer Rate', 'डीलर दर', 'dealer_rate'), 0);
+            const fertilizerGrade = String(getVal(row, 'Fertilizer Grade', 'Grade', 'ग्रेड', 'fertilizer_grade')).trim();
+            const npkRatio = String(getVal(row, 'NPK Ratio', 'NPK', 'एनपीके', 'npk_ratio')).trim();
+            const seedVariety = String(getVal(row, 'Seed Variety', 'Variety', 'वाण', 'seed_variety')).trim();
+            const toxicityClass = String(getVal(row, 'Toxicity Class', 'विषारी वर्ग', 'toxicity_class')).trim();
+            const cibRegistrationNo = String(getVal(row, 'CIB Registration No', 'CIB No', 'सीआयबी क्र', 'cib_registration_no')).trim();
+            const description = String(getVal(row, 'Description', 'वर्णन', 'description')).trim();
+            const productCode = String(getVal(row, 'Product Code', 'Code', 'Item Code', 'कोड', 'उत्पादन कोड', 'product_code') || '').trim();
 
             const isValid = name.length > 0;
             return {
               _index: idx + 1,
               _isValid: isValid,
               _error: !isValid ? (isMr ? 'उत्पादनाचे नाव आवश्यक आहे' : 'Product name is missing') : '',
-              productCode: (row['Product Code'] || row['Code'] || row['कोड'] || `PRD-${Math.floor(1000 + Math.random() * 9000)}`).toString().trim(),
+              productCode: productCode || `PRD-${Math.floor(1000 + Math.random() * 9000)}`,
               name,
-              nameMr: (row['Marathi / Local Name'] || row['Local Name'] || row['नाव (मराठी)'] || name).toString().trim(),
+              nameMr,
               category,
-              brand: (row['Brand / Company'] || row['Brand'] || row['Company'] || row['कंपनी'] || 'General').toString().trim(),
-              hsnCode: (row['HSN Code'] || row['HSN'] || '0000').toString().trim(),
+              brand,
+              hsnCode,
               unit,
               packSize,
               purchaseRate,
               mrp,
               sellingRate,
-              gstRate: parseFloat(row['GST Rate (%)'] || row['GST %'] || row['GST'] || 0) || 0,
-              lowStockAlert: parseFloat(row['Low Stock Alert'] || row['Min Stock'] || 10) || 10,
-              barcode: (row['Barcode'] || '').toString().trim(),
-              technicalName: (row['Technical Name'] || row['Technical'] || '').toString().trim(),
+              dealerRate,
+              gstRate,
+              lowStockAlert,
+              barcode,
+              technicalName,
+              subcategory,
+              fertilizerGrade,
+              npkRatio,
+              seedVariety,
+              toxicityClass,
+              cibRegistrationNo,
+              description,
               openingStock,
               batchNo,
               expiryDate
             };
           } else if (activeTab === 'farmers') {
-            const name = (row['Farmer Name'] || row['Name'] || row['शेतकरी नाव'] || row['नाव'] || '').toString().trim();
-            const mobile = (row['Mobile'] || row['Phone'] || row['मोबाईल'] || '').toString().trim();
-            const village = (row['Village'] || row['गाव'] || '').toString().trim();
-            const isValid = name.length > 0 && mobile.length >= 8;
+            const customerCode = String(getVal(row, 'Farmer Code', 'Customer Code', 'Code', 'कोड', 'शेतकरी कोड') || '').trim();
+            const name = String(getVal(row, 'Farmer Name', 'Name', 'Customer Name', 'शेतकरी नाव', 'नाव', 'ग्राहक नाव')).trim();
+            const nameMr = String(getVal(row, 'Marathi Name', 'Local Name', 'नाव (मराठी)', 'name_mr') || name).trim();
+            const mobile = String(getVal(row, 'Mobile', 'Phone', 'मोबाईल', 'फोन')).trim();
+            const village = String(getVal(row, 'Village', 'गाव', 'village') || 'गाव').trim();
+            const isValid = name.length > 0;
 
             return {
               _index: idx + 1,
               _isValid: isValid,
-              _error: !isValid 
-                ? (isMr ? 'नाव आणि वैध मोबाईल आवश्यक आहे' : 'Farmer name and valid mobile are required') 
-                : '',
+              _error: !isValid ? (isMr ? 'शेतकरी नाव आवश्यक आहे' : 'Farmer name is required') : '',
+              customerCode,
               name,
-              mobile,
+              nameMr,
+              mobile: mobile || `99${Math.floor(10000000 + Math.random() * 90000000)}`,
+              altMobile: String(getVal(row, 'Alt Mobile', 'Alternate Phone', 'पर्यायी मोबाईल')).trim(),
               village,
-              aadharNo: (row['Aadhar No'] || row['Aadhar'] || row['आधार'] || '').toString().trim(),
-              landAcres: parseFloat(row['7/12 Land (Acres)'] || row['Land'] || row['जमीन'] || 0) || 0,
-              majorCrops: (row['Major Crops'] || row['Crops'] || row['पिके'] || 'Cotton, Soybean').toString().trim(),
-              creditLimit: parseFloat(row['Credit Limit (Rs)'] || row['Credit Limit'] || row['मर्यादा'] || 50000) || 50000,
-              openingBalance: parseFloat(row['Opening Balance (Rs)'] || row['Opening Balance'] || row['आरंभी बाकी'] || 0) || 0,
+              taluka: String(getVal(row, 'Taluka', 'तालुका') || 'बारामती').trim(),
+              district: String(getVal(row, 'District', 'जिल्हा') || 'पुणे').trim(),
+              address: String(getVal(row, 'Address', 'पत्ता') || '').trim(),
+              pincode: String(getVal(row, 'Pincode', 'पिनकोड') || '').trim(),
+              aadharNo: String(getVal(row, 'Aadhar No', 'Aadhar', 'आधार', 'आधार क्र.')).trim(),
+              landAcres: safeNumber(getVal(row, '7/12 Land (Acres)', 'Land', 'जमीन', '7/12 जमीन'), 0),
+              majorCrops: String(getVal(row, 'Major Crops', 'Crops', 'पिके', 'मुख्य पिके') || 'Cotton, Soybean').trim(),
+              creditLimit: safeNumber(getVal(row, 'Credit Limit (Rs)', 'Credit Limit', 'मर्यादा', 'उधारी मर्यादा'), 50000),
+              openingBalance: safeNumber(getVal(row, 'Opening Balance (Rs)', 'Opening Balance', 'आरंभी बाकी', 'बाकी रक्कम'), 0),
+              notes: String(getVal(row, 'Notes', 'शेरा', 'notes')).trim(),
+            };
+          } else if (activeTab === 'suppliers') {
+            const name = String(getVal(row, 'Company / Supplier Name', 'Supplier Name', 'Name', 'Company', 'कंपनी नाव', 'सप्लायर नाव')).trim();
+            const company = String(getVal(row, 'Company', 'कंपनी') || name).trim();
+            const mobile = String(getVal(row, 'Mobile', 'Phone', 'मोबाईल')).trim();
+            const isValid = name.length > 0;
+
+            return {
+              _index: idx + 1,
+              _isValid: isValid,
+              _error: !isValid ? (isMr ? 'सप्लायरचे नाव आवश्यक आहे' : 'Supplier name is required') : '',
+              supplierCode: String(getVal(row, 'Supplier Code', 'Code', 'सप्लायर कोड') || `SUP-${Math.floor(1000 + Math.random() * 9000)}`).trim(),
+              name,
+              company,
+              contactPerson: String(getVal(row, 'Contact Person', 'संपर्क व्यक्ती')).trim(),
+              mobile: mobile || '0000000000',
+              email: String(getVal(row, 'Email', 'ईमेल')).trim(),
+              gstin: String(getVal(row, 'GSTIN', 'GST', 'जीएसटी')).trim().toUpperCase(),
+              licenceNo: String(getVal(row, 'Licence No', 'Licence', 'परवाना क्रमांक')).trim(),
+              address: String(getVal(row, 'Address', 'पत्ता')).trim(),
+              city: String(getVal(row, 'City', 'शहर') || 'पुणे').trim(),
+              state: String(getVal(row, 'State', 'राज्य') || 'Maharashtra').trim(),
+              creditLimit: safeNumber(getVal(row, 'Credit Limit (Rs)', 'Credit Limit', 'उधारी मर्यादा'), 500000),
+              openingBalance: safeNumber(getVal(row, 'Opening Balance (Rs)', 'Opening Balance', 'आरंभी बाकी'), 0),
             };
           } else {
             // Sales import
-            const invoiceNo = (row['Invoice No'] || row['Invoice'] || row['पावती क्र.'] || `INV-${Math.floor(1000 + Math.random() * 9000)}`).toString().trim();
-            const customerName = (row['Customer Name'] || row['Farmer Name'] || row['ग्राहक नाव'] || 'Walk-in Customer').toString().trim();
-            const mobile = (row['Customer Mobile'] || row['Mobile'] || '').toString().trim();
-            const village = (row['Customer Village'] || row['Village'] || '').toString().trim();
-            const product = (row['Product Code or Name'] || row['Product'] || row['उत्पादन'] || '').toString().trim();
-            const qty = parseFloat(row['Quantity'] || row['Qty'] || row['नग'] || 1) || 1;
-            const unitPrice = parseFloat(row['Unit Price (Rs)'] || row['Price'] || row['दर'] || 0) || 0;
-            const gstRate = parseFloat(row['GST %'] || row['GST'] || 0) || 0;
-            const paidAmount = parseFloat(row['Paid Amount (Rs)'] || row['Paid'] || 0) || 0;
+            const invoiceNo = String(getVal(row, 'Invoice No', 'Invoice', 'पावती क्र.', 'बिल क्र.') || `INV-${Math.floor(1000 + Math.random() * 9000)}`).trim();
+            const customerName = String(getVal(row, 'Customer Name', 'Farmer Name', 'Customer', 'ग्राहक नाव', 'शेतकरी') || 'Walk-in Customer').trim();
+            const mobile = String(getVal(row, 'Customer Mobile', 'Mobile', 'मोबाईल')).trim();
+            const village = String(getVal(row, 'Customer Village', 'Village', 'गाव')).trim();
+            const product = String(getVal(row, 'Product Code or Name', 'Product', 'Item', 'उत्पादन नाव', 'उत्पादन')).trim();
+            const qty = safeNumber(getVal(row, 'Quantity', 'Qty', 'नग'), 1);
+            const unitPrice = safeNumber(getVal(row, 'Unit Price (Rs)', 'Price', 'Rate', 'दर'), 0);
+            const gstRate = safeNumber(getVal(row, 'GST %', 'GST Rate (%)', 'GST', 'जीएसटी %'), 0);
+            const paidAmount = safeNumber(getVal(row, 'Paid Amount (Rs)', 'Paid', 'भरलेली रक्कम'), 0);
             const isValid = product.length > 0 && unitPrice > 0;
 
             return {
@@ -383,15 +649,15 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
               _isValid: isValid,
               _error: !isValid ? (isMr ? 'उत्पादन आणि दर आवश्यक आहे' : 'Product name and price are required') : '',
               invoiceNo,
-              date: (row['Date (YYYY-MM-DD)'] || row['Date'] || new Date().toISOString().slice(0, 10)).toString().trim(),
+              date: parseExcelDate(getVal(row, 'Date (YYYY-MM-DD)', 'Date', 'तारीख'), new Date().toISOString().slice(0, 10)),
               customerName,
               mobile,
               village,
-              paymentMode: (row['Payment Mode'] || row['Mode'] || 'Cash').toString().trim(),
+              paymentMode: String(getVal(row, 'Payment Mode', 'Mode', 'पेमेंट प्रकार') || 'Cash').trim(),
               product,
               qty,
               unitPrice,
-              discount: parseFloat(row['Discount (Rs)'] || row['Discount'] || 0) || 0,
+              discount: safeNumber(getVal(row, 'Discount (Rs)', 'Discount', 'सूट'), 0),
               gstRate,
               paidAmount
             };
@@ -411,7 +677,7 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
       }
     };
 
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   // ================= 4. EXECUTE BULK IMPORT =================
@@ -432,60 +698,90 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
       if (activeTab === 'products') {
         for (const row of validRows) {
           try {
-            const productId = await dbService.saveProduct({
+            await dbService.saveProduct({
               product_code: row.productCode,
               name: row.name,
               name_mr: row.nameMr || row.name,
               brand: row.brand,
               company: row.brand,
               category: row.category as ProductCategory,
+              subcategory: row.subcategory,
               hsn_code: row.hsnCode,
               unit: row.unit,
               pack_size: row.packSize,
               purchase_rate: row.purchaseRate,
               mrp: row.mrp,
               selling_rate: row.sellingRate,
+              dealer_rate: row.dealerRate,
               gst_rate: row.gstRate,
               low_stock_alert: row.lowStockAlert,
               barcode: row.barcode,
               technical_name: row.technicalName,
+              fertilizer_grade: row.fertilizerGrade,
+              npk_ratio: row.npkRatio,
+              seed_variety: row.seedVariety,
+              toxicity_class: row.toxicityClass,
+              cib_registration_no: row.cibRegistrationNo,
+              description: row.description,
+              opening_stock: row.openingStock,
+              batch_number: row.batchNo || 'OPN-01',
+              expiry_date: row.expiryDate,
             });
-
-            // If opening stock provided, create an opening batch
-            if (row.openingStock > 0 && productId) {
-              await dbService.createDefaultBatch(productId, {
-                batch_number: row.batchNo || 'BULK-OPN',
-                expiry_date: row.expiryDate || '2027-12-31',
-                current_qty: row.openingStock,
-                opening_qty: row.openingStock,
-                purchase_rate: row.purchaseRate,
-                mrp: row.mrp,
-                selling_rate: row.sellingRate,
-              });
-            }
             success++;
           } catch (e: any) {
             skipped++;
-            errors.push(`${row.name}: ${e.message}`);
+            errors.push(`${row.name} (${row.productCode}): ${e.message || 'Import error'}`);
           }
         }
       } else if (activeTab === 'farmers') {
         for (const row of validRows) {
           try {
             await dbService.saveCustomer({
+              customer_code: row.customerCode || undefined,
               name: row.name,
+              name_mr: row.nameMr || row.name,
               mobile: row.mobile,
-              village: row.village,
+              alt_mobile: row.altMobile,
+              village: row.village || 'गाव',
+              taluka: row.taluka || 'बारामती',
+              district: row.district || 'पुणे',
+              address: row.address || '',
+              pincode: row.pincode || '',
               aadhar_no: row.aadharNo,
               land_acreage: row.landAcres,
               crops_grown: row.majorCrops,
               credit_limit: row.creditLimit,
-              current_balance: row.openingBalance,
+              opening_balance: row.openingBalance,
+              notes: row.notes,
             });
             success++;
           } catch (e: any) {
             skipped++;
-            errors.push(`${row.name}: ${e.message}`);
+            errors.push(`${row.name}: ${e.message || 'Import error'}`);
+          }
+        }
+      } else if (activeTab === 'suppliers') {
+        for (const row of validRows) {
+          try {
+            await dbService.saveSupplier({
+              supplier_code: row.supplierCode,
+              name: row.name,
+              company: row.company,
+              contact_person: row.contactPerson,
+              mobile: row.mobile,
+              email: row.email,
+              address: row.address,
+              city: row.city,
+              state: row.state,
+              gstin: row.gstin,
+              licence_no: row.licenceNo,
+              credit_limit: row.creditLimit,
+              opening_balance: row.openingBalance,
+            });
+            success++;
+          } catch (e: any) {
+            skipped++;
+            errors.push(`${row.name}: ${e.message || 'Import error'}`);
           }
         }
       } else {
@@ -505,7 +801,7 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           try {
             const first = invRows[0];
 
-            // 1. Handle Customer: Match or create
+            // 1. Handle Customer
             let customerId = 0;
             if (first.customerName && first.customerName.toLowerCase() !== 'walk-in customer') {
               const cust = existingCustomers.find(
@@ -515,13 +811,12 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
               if (cust) {
                 customerId = cust.id;
               } else {
-                // Automatically create customer seamlessly
                 const newCustId = await dbService.saveCustomer({
                   name: first.customerName,
                   mobile: first.mobile || `99000${Math.floor(10000 + Math.random() * 90000)}`,
                   village: first.village || 'Local',
                   credit_limit: 50000,
-                  current_balance: 0,
+                  opening_balance: 0,
                 });
                 customerId = newCustId;
                 const newlyCreatedCust = await dbService.getCustomerById(newCustId);
@@ -535,19 +830,17 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
             const saleItems: any[] = [];
 
             for (const itemRow of invRows) {
-              // Match product
               let prod = existingProducts.find(
                 (p) => p.product_code === itemRow.product || p.name.toLowerCase() === itemRow.product.toLowerCase()
               );
 
               if (!prod) {
-                // Auto create generic product if not found
                 const newProdId = await dbService.saveProduct({
                   product_code: `PRD-${Math.floor(1000 + Math.random() * 9000)}`,
                   name: itemRow.product,
                   name_mr: itemRow.product,
                   brand: 'General',
-                  category: 'Fertilizer',
+                  category: 'Fertilizers',
                   hsn_code: '3102',
                   unit: 'Nos',
                   pack_size: '1',
@@ -569,7 +862,7 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
               totalGst += gstAmount;
 
               saleItems.push({
-                product_id: prod ? prod.id : 0,
+                product_id: prod ? prod.id : 1,
                 product_name: prod ? prod.name : itemRow.product,
                 product_code: prod ? prod.product_code : 'PRD',
                 hsn_code: prod ? prod.hsn_code : '3102',
@@ -621,7 +914,7 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
             success += invRows.length;
           } catch (e: any) {
             skipped += invRows.length;
-            errors.push(`Invoice ${invNo}: ${e.message}`);
+            errors.push(`Invoice ${invNo}: ${e.message || 'Sale import error'}`);
           }
         }
       }
@@ -679,7 +972,9 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
               onClick={
                 activeTab === 'products' 
                   ? handleExportProducts 
-                  : (activeTab === 'farmers' ? handleExportFarmers : handleExportSales)
+                  : (activeTab === 'farmers' 
+                      ? handleExportFarmers 
+                      : (activeTab === 'suppliers' ? handleExportSuppliers : handleExportSales))
               }
               disabled={loading}
               className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-xs transition-colors disabled:opacity-50"
@@ -716,6 +1011,19 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
           >
             <Users className="w-4 h-4" />
             <span>{isMr ? 'शेतकरी / ग्राहक खाते' : 'Farmers & Customers'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('suppliers')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer flex items-center gap-2 ${
+              activeTab === 'suppliers'
+                ? 'bg-emerald-700 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>{isMr ? 'सप्लायर / पुरवठादार' : 'Suppliers Master'}</span>
           </button>
 
           <button
@@ -873,6 +1181,18 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
                       <th className="p-2.5 text-right">{isMr ? 'आरंभी बाकी' : 'Opening Bal'}</th>
                     </>
                   )}
+                  {activeTab === 'suppliers' && (
+                    <>
+                      <th className="p-2.5">{isMr ? 'सप्लायर कोड' : 'Supplier Code'}</th>
+                      <th className="p-2.5">{isMr ? 'कंपनी / नाव' : 'Company / Name'}</th>
+                      <th className="p-2.5">{isMr ? 'संपर्क व्यक्ती' : 'Contact Person'}</th>
+                      <th className="p-2.5">{isMr ? 'मोबाईल' : 'Mobile'}</th>
+                      <th className="p-2.5">{isMr ? 'GSTIN' : 'GSTIN'}</th>
+                      <th className="p-2.5">{isMr ? 'शहर' : 'City'}</th>
+                      <th className="p-2.5 text-right">{isMr ? 'उधारी मर्यादा' : 'Credit Limit'}</th>
+                      <th className="p-2.5 text-right">{isMr ? 'आरंभी बाकी' : 'Opening Bal'}</th>
+                    </>
+                  )}
                   {activeTab === 'sales' && (
                     <>
                       <th className="p-2.5">{isMr ? 'पावती क्र.' : 'Invoice No'}</th>
@@ -927,6 +1247,19 @@ export const BulkDataExchange: React.FC<BulkDataExchangeProps> = ({ currentLang,
                         <td className="p-2.5 text-slate-600">{row.village}</td>
                         <td className="p-2.5 font-mono text-slate-500">{row.aadharNo || '-'}</td>
                         <td className="p-2.5 text-center font-mono text-slate-700">{row.landAcres}</td>
+                        <td className="p-2.5 text-right font-mono text-slate-700">{formatINR(row.creditLimit)}</td>
+                        <td className="p-2.5 text-right font-mono font-bold text-amber-700">{formatINR(row.openingBalance)}</td>
+                      </>
+                    )}
+
+                    {activeTab === 'suppliers' && (
+                      <>
+                        <td className="p-2.5 font-mono text-slate-600">{row.supplierCode}</td>
+                        <td className="p-2.5 font-bold text-slate-800">{row.name}</td>
+                        <td className="p-2.5 text-slate-600">{row.contactPerson || '-'}</td>
+                        <td className="p-2.5 font-mono text-slate-700">{row.mobile}</td>
+                        <td className="p-2.5 font-mono text-slate-600">{row.gstin || '-'}</td>
+                        <td className="p-2.5 text-slate-600">{row.city}</td>
                         <td className="p-2.5 text-right font-mono text-slate-700">{formatINR(row.creditLimit)}</td>
                         <td className="p-2.5 text-right font-mono font-bold text-amber-700">{formatINR(row.openingBalance)}</td>
                       </>

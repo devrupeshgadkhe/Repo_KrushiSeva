@@ -26,6 +26,7 @@ import {
   StatutorySeedRegisterRow,
   StatutoryPesticideRegisterRow,
 } from '../types';
+import { safeNumber, parseExcelDate } from '../utils/formatters';
 
 export const dbService = {
   async init() {
@@ -78,20 +79,91 @@ export const dbService = {
     const cleanNameMr = product.name_mr?.trim() || cleanName;
     const cleanNameHi = product.name_hi?.trim() || cleanName;
     const cleanCategory = product.category || 'Fertilizers';
-    const cleanUnit = product.unit || 'Bags';
+    const cleanUnit = product.unit?.trim() || 'Bags';
     const cleanPackSize = product.pack_size?.trim() || '1';
     const cleanHsn = product.hsn_code?.trim() || '0000';
-    const cleanPurchase = Number(product.purchase_rate) || 0;
-    const cleanMrp = Number(product.mrp) || 0;
-    const cleanSelling = Number(product.selling_rate) || 0;
-    const cleanDealer = Number(product.dealer_rate) || 0;
-    const cleanGst = Number(product.gst_rate) || 0;
-    const cleanMinStock = Number(product.min_stock ?? product.low_stock_alert ?? 10);
-    const cleanReorder = Number(product.reorder_level ?? product.low_stock_alert ?? 15);
+    const cleanPurchase = safeNumber(product.purchase_rate, 0);
+    const cleanMrp = safeNumber(product.mrp, 0);
+    const cleanSelling = safeNumber(product.selling_rate, cleanMrp || cleanPurchase || 0);
+    const cleanDealer = safeNumber(product.dealer_rate, 0);
+    const cleanGst = safeNumber(product.gst_rate, 5);
+    const cleanMinStock = safeNumber(product.min_stock ?? (product as any).low_stock_alert, 10);
+    const cleanReorder = safeNumber(product.reorder_level ?? (product as any).low_stock_alert, 15);
     const cleanTechnicalName = product.technical_name?.trim() || '';
-    const cleanProductCode = product.product_code?.trim() || `PRD-${Math.floor(1000 + Math.random() * 9000)}`;
+    const cleanBarcode = product.barcode?.trim() || '';
+    const cleanSubcategory = product.subcategory?.trim() || '';
+    const cleanFertGrade = product.fertilizer_grade?.trim() || '';
+    const cleanNpk = product.npk_ratio?.trim() || '';
+    const cleanSeedVar = product.seed_variety?.trim() || '';
+    const cleanToxClass = product.toxicity_class?.trim() || '';
+    const cleanCib = product.cib_registration_no?.trim() || '';
+    const cleanDesc = product.description?.trim() || '';
 
-    if (product.id) {
+    const inputCode = product.product_code?.trim();
+
+    // 1. Resolve Target Product ID
+    let targetId = product.id;
+    if (!targetId) {
+      if (inputCode) {
+        const existingByCode = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM products WHERE product_code = ?', [inputCode]);
+        if (existingByCode) targetId = existingByCode.id;
+      }
+      if (!targetId && cleanName) {
+        const existingByName = sqliteEngine.queryOne<{ id: number; product_code: string }>('SELECT id, product_code FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))', [cleanName]);
+        if (existingByName) targetId = existingByName.id;
+      }
+    }
+
+    // 2. Resolve safe unique product_code
+    let finalCode = inputCode || `PRD-${Math.floor(1000 + Math.random() * 9000)}`;
+    if (targetId) {
+      // If updating, check if inputCode is in use by a DIFFERENT product
+      if (inputCode) {
+        const conflict = sqliteEngine.queryOne<{ id: number; product_code: string }>('SELECT id FROM products WHERE product_code = ? AND id != ?', [inputCode, targetId]);
+        if (conflict) {
+          const curr = sqliteEngine.queryOne<{ product_code: string }>('SELECT product_code FROM products WHERE id = ?', [targetId]);
+          if (curr?.product_code && curr.product_code !== inputCode) {
+            finalCode = curr.product_code;
+          } else {
+            let attempt = 1;
+            let testCode = `${inputCode}-${targetId}`;
+            while (sqliteEngine.queryOne('SELECT id FROM products WHERE product_code = ? AND id != ?', [testCode, targetId])) {
+              testCode = `${inputCode}-${targetId}-${attempt++}`;
+            }
+            finalCode = testCode;
+          }
+        } else {
+          finalCode = inputCode;
+        }
+      } else {
+        const curr = sqliteEngine.queryOne<{ product_code: string }>('SELECT product_code FROM products WHERE id = ?', [targetId]);
+        finalCode = curr?.product_code || finalCode;
+      }
+    } else {
+      // If inserting a new product, ensure finalCode is unique
+      let attempt = 1;
+      let testCode = finalCode;
+      while (sqliteEngine.queryOne('SELECT id FROM products WHERE product_code = ?', [testCode])) {
+        testCode = `${finalCode}-${attempt++}`;
+      }
+      finalCode = testCode;
+    }
+
+    // 3. Ensure a valid location exists for batches
+    let validLocationId = 1;
+    try {
+      const loc = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM locations WHERE is_primary = 1 OR id = 1 LIMIT 1');
+      if (loc) {
+        validLocationId = loc.id;
+      } else {
+        sqliteEngine.run("INSERT OR IGNORE INTO locations (id, name, code, is_primary) VALUES (1, 'Main Shop (दुकान)', 'SHOP-01', 1)");
+        validLocationId = 1;
+      }
+    } catch {
+      validLocationId = 1;
+    }
+
+    if (targetId) {
       sqliteEngine.run(
         `UPDATE products SET 
           product_code = ?, barcode = ?, name = ?, name_mr = ?, name_hi = ?, category = ?, 
@@ -99,19 +171,18 @@ export const dbService = {
           purchase_rate = ?, selling_rate = ?, dealer_rate = ?, gst_rate = ?, hsn_code = ?, 
           batch_required = ?, expiry_required = ?, min_stock = ?, reorder_level = ?, 
           technical_name = ?, fertilizer_grade = ?, npk_ratio = ?, seed_variety = ?, toxicity_class = ?, 
-          cib_registration_no = ?, description = ?
+          cib_registration_no = ?, description = ?, active = 1
         WHERE id = ?`,
         [
-          cleanProductCode, product.barcode || '', cleanName, cleanNameMr, cleanNameHi, cleanCategory,
-          product.subcategory || '', cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
+          finalCode, cleanBarcode, cleanName, cleanNameMr, cleanNameHi, cleanCategory,
+          cleanSubcategory, cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
           cleanPurchase, cleanSelling, cleanDealer, cleanGst, cleanHsn,
           product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, cleanMinStock, cleanReorder,
-          cleanTechnicalName, product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
-          product.cib_registration_no || '', product.description || '', product.id
+          cleanTechnicalName, cleanFertGrade, cleanNpk, cleanSeedVar, cleanToxClass,
+          cleanCib, cleanDesc, targetId
         ]
       );
-      this.logAudit(userName, 'UPDATE', 'Product', String(product.id), `Updated product ${cleanName}`);
-      return product.id;
+      this.logAudit(userName, 'UPDATE', 'Product', String(targetId), `Updated product ${cleanName}`);
     } else {
       const res = sqliteEngine.run(
         `INSERT INTO products (
@@ -121,37 +192,73 @@ export const dbService = {
           seed_variety, toxicity_class, cib_registration_no, description, active, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
         [
-          cleanProductCode, product.barcode || '', cleanName, cleanNameMr, cleanNameHi, cleanCategory,
-          product.subcategory || '', cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
+          finalCode, cleanBarcode, cleanName, cleanNameMr, cleanNameHi, cleanCategory,
+          cleanSubcategory, cleanBrand, cleanCompany, cleanUnit, cleanPackSize, cleanMrp,
           cleanPurchase, cleanSelling, cleanDealer, cleanGst, cleanHsn,
           product.batch_required ? 1 : 0, product.expiry_required ? 1 : 0, cleanMinStock, cleanReorder,
-          cleanTechnicalName, product.fertilizer_grade || '', product.npk_ratio || '', product.seed_variety || '', product.toxicity_class || '',
-          product.cib_registration_no || '', product.description || ''
+          cleanTechnicalName, cleanFertGrade, cleanNpk, cleanSeedVar, cleanToxClass,
+          cleanCib, cleanDesc
         ]
       );
-      const newProductId = res.lastInsertRowid;
+      targetId = res.lastInsertRowid;
+      this.logAudit(userName, 'CREATE', 'Product', String(targetId), `Created product ${cleanName}`);
+    }
 
-      // Auto-create initial default batch so newly added product is immediately ready for sale in POS
-      try {
-        const rawStock = (product as any).opening_stock ?? (product as any).current_stock;
-        const initialStock = (rawStock !== undefined && rawStock !== null && rawStock !== '') 
-          ? Math.max(0, Number(rawStock)) 
-          : Math.max(10, cleanMinStock || 10);
+    // 4. Batch creation or update for this product (handles opening stock seamlessly)
+    try {
+      const rawStock = (product as any).opening_stock ?? (product as any).openingStock ?? (product as any).current_stock;
+      const initialStock = (rawStock !== undefined && rawStock !== null && rawStock !== '') 
+        ? Math.max(0, safeNumber(rawStock, 0)) 
+        : 0;
+      const batchNum = (product as any).batch_number || (product as any).batchNo || 'OPN-01';
+      const rawExp = (product as any).expiry_date || (product as any).expiryDate;
+      const expDate = parseExcelDate(rawExp, '2028-12-31');
 
+      const existingBatch = sqliteEngine.queryOne<{ id: number }>(
+        'SELECT id FROM product_batches WHERE product_id = ? AND batch_number = ?',
+        [targetId, batchNum]
+      );
+
+      let savedBatchId: number | null = null;
+      if (existingBatch) {
         sqliteEngine.run(
+          `UPDATE product_batches SET 
+            current_qty = ?, opening_qty = ?, purchase_rate = ?, mrp = ?, selling_rate = ?, expiry_date = ?
+          WHERE id = ?`,
+          [initialStock, initialStock, cleanPurchase, cleanMrp, cleanSelling, expDate, existingBatch.id]
+        );
+        savedBatchId = existingBatch.id;
+      } else {
+        const batchRes = sqliteEngine.run(
           `INSERT INTO product_batches (
             product_id, batch_number, mfg_date, expiry_date, purchase_rate, mrp, selling_rate,
-            opening_qty, received_qty, sold_qty, current_qty, status
-          ) VALUES (?, 'BATCH-01', date('now'), date('now', '+2 years'), ?, ?, ?, ?, ?, 0, ?, 'Active')`,
-          [newProductId, cleanPurchase, cleanMrp, cleanSelling, initialStock, initialStock, initialStock]
+            opening_qty, current_qty, location_id, supplier_id, status
+          ) VALUES (?, ?, date('now'), ?, ?, ?, ?, ?, ?, ?, NULL, 'Active')`,
+          [targetId, batchNum, expDate, cleanPurchase, cleanMrp, cleanSelling, initialStock, initialStock, validLocationId]
         );
-      } catch (batchErr) {
-        console.warn('Could not create default batch for new product:', batchErr);
+        savedBatchId = batchRes.lastInsertRowid;
       }
 
-      this.logAudit(userName, 'CREATE', 'Product', String(newProductId), `Created product ${cleanName}`);
-      return newProductId;
+      if (initialStock > 0) {
+        const existingMv = sqliteEngine.queryOne(
+          "SELECT id FROM stock_movements WHERE product_id = ? AND reference_type = 'Opening Stock' LIMIT 1",
+          [targetId]
+        );
+        if (!existingMv) {
+          sqliteEngine.run(
+            `INSERT INTO stock_movements (
+              date_time, product_id, product_name, batch_id, batch_number, movement_type, 
+              quantity, unit, reference_type, reference_id, location_name, user_name, reason
+            ) VALUES (datetime('now'), ?, ?, ?, ?, 'Opening', ?, ?, 'Opening Stock', ?, 'Main Shop', ?, 'Opening Stock Setup')`,
+            [targetId, cleanName, savedBatchId, batchNum, initialStock, cleanUnit, `OPN-${targetId}`, userName]
+          );
+        }
+      }
+    } catch (batchErr) {
+      console.warn('Could not sync batch for product:', batchErr);
     }
+
+    return targetId;
   },
 
   async createProduct(product: Partial<Product>, userName = 'Admin'): Promise<number> {
@@ -213,26 +320,59 @@ export const dbService = {
   async createDefaultBatch(productId: number, options?: Partial<ProductBatch>): Promise<ProductBatch> {
     await sqliteEngine.getDb();
     const prod = await this.getProductById(productId);
-    const purchaseRate = options?.purchase_rate ?? prod?.purchase_rate ?? 0;
-    const mrp = options?.mrp ?? prod?.mrp ?? 0;
-    const sellingRate = options?.selling_rate ?? prod?.selling_rate ?? 0;
-    const qty = options?.current_qty ?? 10;
-    const batchNo = options?.batch_number || `BATCH-${Math.floor(100 + Math.random() * 900)}`;
+    const purchaseRate = safeNumber(options?.purchase_rate ?? prod?.purchase_rate, 0);
+    const mrp = safeNumber(options?.mrp ?? prod?.mrp, 0);
+    const sellingRate = safeNumber(options?.selling_rate ?? prod?.selling_rate, 0);
+    const qty = safeNumber(options?.current_qty ?? options?.opening_qty, 10);
+    const batchNo = options?.batch_number?.trim() || `BATCH-${Math.floor(100 + Math.random() * 900)}`;
+    const mfgDate = options?.mfg_date || new Date().toISOString().split('T')[0];
+    const expDate = parseExcelDate(options?.expiry_date, new Date(Date.now() + 2 * 365 * 86400000).toISOString().split('T')[0]);
 
-    const res = sqliteEngine.run(
-      `INSERT INTO product_batches (
-        product_id, batch_number, mfg_date, expiry_date, purchase_rate, mrp, selling_rate,
-        opening_qty, received_qty, sold_qty, current_qty, status
-      ) VALUES (?, ?, date('now'), date('now', '+2 years'), ?, ?, ?, ?, ?, 0, ?, 'Active')`,
-      [productId, batchNo, purchaseRate, mrp, sellingRate, qty, qty, qty]
+    // Ensure location exists
+    let validLocationId = 1;
+    try {
+      const loc = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM locations WHERE is_primary = 1 OR id = 1 LIMIT 1');
+      if (loc) {
+        validLocationId = loc.id;
+      } else {
+        sqliteEngine.run("INSERT OR IGNORE INTO locations (id, name, code, is_primary) VALUES (1, 'Main Shop (दुकान)', 'SHOP-01', 1)");
+      }
+    } catch {
+      validLocationId = 1;
+    }
+
+    // Check if batch with same product_id and batch_number already exists
+    const existing = sqliteEngine.queryOne<ProductBatch>(
+      'SELECT id FROM product_batches WHERE product_id = ? AND batch_number = ?',
+      [productId, batchNo]
     );
 
+    let batchId: number;
+    if (existing) {
+      sqliteEngine.run(
+        `UPDATE product_batches SET 
+          current_qty = ?, opening_qty = ?, purchase_rate = ?, mrp = ?, selling_rate = ?, expiry_date = ?, mfg_date = ? 
+        WHERE id = ?`,
+        [qty, qty, purchaseRate, mrp, sellingRate, expDate, mfgDate, existing.id]
+      );
+      batchId = existing.id;
+    } else {
+      const res = sqliteEngine.run(
+        `INSERT INTO product_batches (
+          product_id, batch_number, mfg_date, expiry_date, purchase_rate, mrp, selling_rate,
+          opening_qty, current_qty, location_id, supplier_id, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'Active')`,
+        [productId, batchNo, mfgDate, expDate, purchaseRate, mrp, sellingRate, qty, qty, validLocationId]
+      );
+      batchId = res.lastInsertRowid;
+    }
+
     return {
-      id: res.lastInsertRowid,
+      id: batchId,
       product_id: productId,
       batch_number: batchNo,
-      mfg_date: new Date().toISOString().split('T')[0],
-      expiry_date: new Date(Date.now() + 2 * 365 * 86400000).toISOString().split('T')[0],
+      mfg_date: mfgDate,
+      expiry_date: expDate,
       purchase_rate: purchaseRate,
       mrp,
       selling_rate: sellingRate,
@@ -424,7 +564,7 @@ export const dbService = {
         }
       }
 
-      // 2. Generate unique invoice number if not provided
+      // 2. Generate unique invoice number if not provided or ensure uniqueness
       let invoiceNo = sale.invoice_no ? sale.invoice_no.trim() : '';
       if (!invoiceNo) {
         const invSettings = sqliteEngine.queryOne<InvoiceSettings>('SELECT * FROM invoice_settings WHERE id = 1');
@@ -436,21 +576,32 @@ export const dbService = {
           nextNum++;
           invoiceNo = `${prefix}${String(nextNum).padStart(6, '0')}`;
         }
+      } else {
+        let suffix = 1;
+        let testInv = invoiceNo;
+        while (sqliteEngine.queryOne('SELECT id FROM sales WHERE invoice_no = ?', [testInv])) {
+          testInv = `${invoiceNo}-${suffix++}`;
+        }
+        invoiceNo = testInv;
       }
 
       // 3. Insert Sale Header
-      const subtotal = Number(sale.subtotal) || 0;
-      const discountAmount = Number(sale.discount_amount) || 0;
-      const taxableAmount = Number(sale.taxable_amount) || 0;
-      const cgstAmount = Number(sale.cgst_amount) || 0;
-      const sgstAmount = Number(sale.sgst_amount) || 0;
-      const igstAmount = Number(sale.igst_amount) || 0;
-      const totalTax = Number(sale.total_tax) || 0;
-      const roundOff = Number(sale.round_off) || 0;
-      const grandTotal = Number(sale.grand_total) || 0;
-      const paidAmount = Number(sale.paid_amount) || 0;
-      const creditAmount = Number(sale.credit_amount) || 0;
-      const customerId = sale.customer_id && Number(sale.customer_id) > 0 ? Number(sale.customer_id) : 0;
+      const subtotal = safeNumber(sale.subtotal, 0);
+      const discountAmount = safeNumber(sale.discount_amount, 0);
+      const taxableAmount = safeNumber(sale.taxable_amount, subtotal);
+      const cgstAmount = safeNumber(sale.cgst_amount, 0);
+      const sgstAmount = safeNumber(sale.sgst_amount, 0);
+      const igstAmount = safeNumber(sale.igst_amount, 0);
+      const totalTax = safeNumber(sale.total_tax, cgstAmount + sgstAmount + igstAmount);
+      const roundOff = safeNumber(sale.round_off, 0);
+      const grandTotal = safeNumber(sale.grand_total, subtotal + totalTax - discountAmount);
+      const paidAmount = safeNumber(sale.paid_amount, 0);
+      const creditAmount = safeNumber(sale.credit_amount, Math.max(0, grandTotal - paidAmount));
+      let customerId = sale.customer_id && Number(sale.customer_id) > 0 ? Number(sale.customer_id) : 0;
+      if (customerId > 0) {
+        const custExists = sqliteEngine.queryOne('SELECT id FROM customers WHERE id = ?', [customerId]);
+        if (!custExists) customerId = 0;
+      }
 
       let custAadhar = sale.customer_aadhar || '';
       let prevBal = Number(sale.previous_balance) || 0;
@@ -486,13 +637,39 @@ export const dbService = {
 
       // 4. Insert Items & Decrement Stock & Record Stock Movements
       for (const item of sale.items) {
+        let validProductId = Number(item.product_id) || 0;
         let prodInfo: any = null;
-        try {
-          prodInfo = sqliteEngine.queryOne<any>('SELECT * FROM products WHERE id = ?', [item.product_id]);
-        } catch {
-          prodInfo = null;
+        if (validProductId > 0) {
+          try {
+            prodInfo = sqliteEngine.queryOne<any>('SELECT * FROM products WHERE id = ?', [validProductId]);
+          } catch {
+            prodInfo = null;
+          }
         }
-        const itemMfg = item.mfg || prodInfo?.company || prodInfo?.brand || '';
+        if (!prodInfo) {
+          if (item.product_code || item.product_name) {
+            prodInfo = sqliteEngine.queryOne<any>(
+              'SELECT * FROM products WHERE product_code = ? OR LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
+              [item.product_code || '', item.product_name || '']
+            );
+          }
+          if (prodInfo) {
+            validProductId = prodInfo.id;
+          } else {
+            const pCode = item.product_code || `PRD-${Math.floor(1000 + Math.random() * 9000)}`;
+            const pName = item.product_name || 'Item';
+            const rate = safeNumber(item.rate, 0);
+            const insProd = sqliteEngine.run(
+              `INSERT INTO products (
+                product_code, barcode, name, name_mr, name_hi, category, brand, company, unit, pack_size, mrp, purchase_rate, selling_rate, gst_rate, hsn_code, min_stock, reorder_level, active, created_at
+              ) VALUES (?, '', ?, ?, ?, 'Fertilizers', 'General', 'General', ?, '1', ?, ?, ?, ?, ?, 10, 15, 1, datetime('now'))`,
+              [pCode, pName, pName, pName, item.unit || 'Nos', safeNumber(item.mrp, rate), rate * 0.85, rate, safeNumber(item.gst_rate, 5), item.hsn_code || '0000']
+            );
+            validProductId = insProd.lastInsertRowid;
+          }
+        }
+
+        const itemMfg = item.mfg || prodInfo?.company || prodInfo?.brand || 'General';
         const itemContent = item.content || prodInfo?.technical_name || prodInfo?.fertilizer_grade || prodInfo?.subcategory || '';
         const itemTechName = (item as any).technical_name || prodInfo?.technical_name || itemContent || '';
 
@@ -503,11 +680,11 @@ export const dbService = {
             taxable_value, gst_rate, cgst_amount, sgst_amount, igst_amount, total_tax, total_amount
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            saleId, item.product_id, item.product_name, item.product_code, item.hsn_code, itemMfg, itemMfg, itemContent, itemTechName,
-            item.batch_id || null, item.batch_number || '', item.expiry_date || '', item.unit,
-            item.pack_size || '', item.quantity, item.rate, item.mrp, item.discount_percent,
-            item.discount_amount, item.taxable_value, item.gst_rate, item.cgst_amount,
-            item.sgst_amount, item.igst_amount, item.total_tax, item.total_amount
+            saleId, validProductId, item.product_name || prodInfo?.name || 'Item', item.product_code || prodInfo?.product_code || 'PRD', item.hsn_code || '0000', itemMfg, itemMfg, itemContent, itemTechName,
+            item.batch_id || null, item.batch_number || '', item.expiry_date || '', item.unit || 'Nos',
+            item.pack_size || '', safeNumber(item.quantity, 1), safeNumber(item.rate, 0), safeNumber(item.mrp, item.rate), safeNumber(item.discount_percent, 0),
+            safeNumber(item.discount_amount, 0), safeNumber(item.taxable_value, 0), safeNumber(item.gst_rate, 0), safeNumber(item.cgst_amount, 0),
+            safeNumber(item.sgst_amount, 0), safeNumber(item.igst_amount, 0), safeNumber(item.total_tax, 0), safeNumber(item.total_amount, 0)
           ]
         );
 
@@ -522,12 +699,12 @@ export const dbService = {
               date_time, product_id, product_name, batch_id, batch_number, movement_type, 
               quantity, unit, reference_type, reference_id, location_name, user_name, reason
             ) VALUES (datetime('now'), ?, ?, ?, ?, 'Sale', ?, ?, 'Sale', ?, 'Main Shop', ?, 'Invoice Billing')`,
-            [item.product_id, item.product_name, item.batch_id, item.batch_number, -item.quantity, item.unit, invoiceNo, userName]
+            [validProductId, item.product_name, item.batch_id, item.batch_number, -item.quantity, item.unit, invoiceNo, userName]
           );
         }
 
         // Statutory Pesticide Record if product is pesticide / insecticide
-        const prod = sqliteEngine.queryOne<Product>('SELECT category, cib_registration_no FROM products WHERE id = ?', [item.product_id]);
+        const prod = sqliteEngine.queryOne<Product>('SELECT category, cib_registration_no FROM products WHERE id = ?', [validProductId]);
         if (prod && (prod.category === 'Insecticide' || prod.category === 'Pesticide' || prod.category === 'Fungicide' || prod.category === 'Herbicide')) {
           sqliteEngine.run(
             `INSERT INTO pesticide_sales_records (
@@ -1127,47 +1304,105 @@ export const dbService = {
 
   async saveCustomer(cust: Partial<Customer>, userName = 'Admin'): Promise<number> {
     await sqliteEngine.getDb();
-    if (cust.id) {
+    let cleanMobile = cust.mobile?.trim() || '';
+    const cleanName = cust.name?.trim() || 'Customer';
+    const inputCode = cust.customer_code?.trim();
+    let targetId = cust.id;
+
+    if (!targetId && inputCode) {
+      const existing = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM customers WHERE customer_code = ?', [inputCode]);
+      if (existing) targetId = existing.id;
+    }
+    if (!targetId && cleanMobile) {
+      const existing = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM customers WHERE mobile = ?', [cleanMobile]);
+      if (existing) targetId = existing.id;
+    }
+    if (!targetId && cleanName) {
+      const existing = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))', [cleanName]);
+      if (existing) targetId = existing.id;
+    }
+
+    // Ensure mobile is not empty because customers.mobile is UNIQUE NOT NULL
+    if (!cleanMobile) {
+      if (targetId) {
+        const curr = sqliteEngine.queryOne<{ mobile: string }>('SELECT mobile FROM customers WHERE id = ?', [targetId]);
+        cleanMobile = curr?.mobile || `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      } else {
+        cleanMobile = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      }
+    }
+
+    const creditLimit = safeNumber(cust.credit_limit, 50000);
+    const openingBal = safeNumber(cust.opening_balance, 0);
+
+    if (targetId) {
+      // Check if cleanMobile conflicts with another customer (id != targetId)
+      const conflict = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM customers WHERE mobile = ? AND id != ?', [cleanMobile, targetId]);
+      if (conflict) {
+        const curr = sqliteEngine.queryOne<{ mobile: string }>('SELECT mobile FROM customers WHERE id = ?', [targetId]);
+        cleanMobile = curr?.mobile || `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      }
+
+      if (inputCode) {
+        const codeConflict = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM customers WHERE customer_code = ? AND id != ?', [inputCode, targetId]);
+        if (!codeConflict) {
+          sqliteEngine.run('UPDATE customers SET customer_code = ? WHERE id = ?', [inputCode, targetId]);
+        }
+      }
+
       sqliteEngine.run(
         `UPDATE customers SET 
-          name = ?, name_mr = ?, mobile = ?, alt_mobile = ?, village = ?, taluka = ?, 
+          name = ?, name_mr = ?, mobile = ?, alt_mobile = ?, aadhar_no = ?, village = ?, taluka = ?, 
           district = ?, address = ?, pincode = ?, credit_limit = ?, notes = ? 
         WHERE id = ?`,
         [
-          cust.name, cust.name_mr || '', cust.mobile, cust.alt_mobile || '', cust.village,
-          cust.taluka || '', cust.district || '', cust.address || '', cust.pincode || '',
-          cust.credit_limit || 50000, cust.notes || '', cust.id
+          cleanName, cust.name_mr || cleanName, cleanMobile, cust.alt_mobile || '', cust.aadhar_no || '', cust.village || 'गाव',
+          cust.taluka || 'बारामती', cust.district || 'पुणे', cust.address || '', cust.pincode || '',
+          creditLimit, cust.notes || '', targetId
         ]
       );
-      this.logAudit(userName, 'UPDATE', 'Customer', String(cust.id), `Updated customer ${cust.name}`);
-      return cust.id;
+      this.logAudit(userName, 'UPDATE', 'Customer', String(targetId), `Updated customer ${cleanName}`);
+      return targetId;
     } else {
+      // Ensure unique mobile before insert
+      let testMobile = cleanMobile;
+      while (sqliteEngine.queryOne('SELECT id FROM customers WHERE mobile = ?', [testMobile])) {
+        testMobile = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+      }
+      cleanMobile = testMobile;
+
       const lastCust = sqliteEngine.queryOne<{ max_id: number }>('SELECT MAX(id) as max_id FROM customers');
-      const nextCode = `CUST-${String(101 + (lastCust?.max_id || 0)).padStart(4, '0')}`;
+      let nextNum = (lastCust?.max_id || 0) + 1;
+      let nextCode = inputCode || `CUST-${String(1000 + nextNum).padStart(4, '0')}`;
+      let attempt = 1;
+      while (sqliteEngine.queryOne('SELECT id FROM customers WHERE customer_code = ?', [nextCode])) {
+        nextNum++;
+        nextCode = inputCode ? `${inputCode}-${attempt++}` : `CUST-${String(1000 + nextNum).padStart(4, '0')}`;
+      }
 
       const res = sqliteEngine.run(
         `INSERT INTO customers (
-          customer_code, name, name_mr, mobile, alt_mobile, village, taluka, district, 
+          customer_code, name, name_mr, mobile, alt_mobile, aadhar_no, village, taluka, district, 
           address, pincode, credit_limit, opening_balance, current_balance, notes, active, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
         [
-          nextCode, cust.name, cust.name_mr || '', cust.mobile, cust.alt_mobile || '', cust.village,
+          nextCode, cleanName, cust.name_mr || cleanName, cleanMobile, cust.alt_mobile || '', cust.aadhar_no || '', cust.village || 'गाव',
           cust.taluka || 'बारामती', cust.district || 'पुणे', cust.address || '', cust.pincode || '',
-          cust.credit_limit || 50000, cust.opening_balance || 0, cust.opening_balance || 0, cust.notes || ''
+          creditLimit, openingBal, openingBal, cust.notes || ''
         ]
       );
       const newId = res.lastInsertRowid;
 
-      if ((cust.opening_balance || 0) > 0) {
+      if (openingBal > 0) {
         sqliteEngine.run(
           `INSERT INTO customer_ledger (
             customer_id, date, reference_type, reference_no, description, debit, credit, balance, created_at
           ) VALUES (?, date('now'), 'Opening Balance', 'OPEN', 'सुरुवातीची बाकी जमा', ?, 0, ?, datetime('now'))`,
-          [newId, cust.opening_balance, cust.opening_balance]
+          [newId, openingBal, openingBal]
         );
       }
 
-      this.logAudit(userName, 'CREATE', 'Customer', String(newId), `Created customer ${cust.name} (${nextCode})`);
+      this.logAudit(userName, 'CREATE', 'Customer', String(newId), `Created customer ${cleanName} (${nextCode})`);
       return newId;
     }
   },
@@ -1274,8 +1509,32 @@ export const dbService = {
     const cleanCompany = (supp.company && String(supp.company).trim()) || cleanName;
     const cleanMobile = (supp.mobile && String(supp.mobile).trim()) ? String(supp.mobile).trim() : '0000000000';
     const cleanGstin = supp.gstin ? String(supp.gstin).trim().toUpperCase() : '';
+    const inputCode = supp.supplier_code?.trim();
 
-    if (supp.id) {
+    let targetId = supp.id;
+    if (!targetId) {
+      if (inputCode) {
+        const existing = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM suppliers WHERE supplier_code = ?', [inputCode]);
+        if (existing) targetId = existing.id;
+      }
+      if (!targetId && cleanGstin) {
+        const existing = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM suppliers WHERE gstin = ?', [cleanGstin]);
+        if (existing) targetId = existing.id;
+      }
+      if (!targetId && cleanMobile && cleanMobile !== '0000000000') {
+        const existing = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM suppliers WHERE mobile = ?', [cleanMobile]);
+        if (existing) targetId = existing.id;
+      }
+      if (!targetId && cleanName) {
+        const existing = sqliteEngine.queryOne<{ id: number }>('SELECT id FROM suppliers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) OR LOWER(TRIM(company)) = LOWER(TRIM(?))', [cleanName, cleanCompany]);
+        if (existing) targetId = existing.id;
+      }
+    }
+
+    const creditLimit = safeNumber(supp.credit_limit, 500000);
+    const openingBal = safeNumber(supp.opening_balance, 0);
+
+    if (targetId) {
       sqliteEngine.run(
         `UPDATE suppliers SET 
           name = ?, company = ?, contact_person = ?, mobile = ?, email = ?, 
@@ -1283,18 +1542,17 @@ export const dbService = {
         WHERE id = ?`,
         [
           cleanName, cleanCompany, supp.contact_person || '', cleanMobile, supp.email || '',
-          supp.address || '', supp.city || '', supp.state || 'Maharashtra', cleanGstin,
-          supp.licence_no || '', supp.credit_limit || 500000, supp.id
+          supp.address || '', supp.city || 'पुणे', supp.state || 'Maharashtra', cleanGstin,
+          supp.licence_no || '', creditLimit, targetId
         ]
       );
-      this.logAudit(userName, 'UPDATE', 'Supplier', String(supp.id), `Updated supplier ${cleanName}`);
-      return supp.id;
+      this.logAudit(userName, 'UPDATE', 'Supplier', String(targetId), `Updated supplier ${cleanName}`);
+      return targetId;
     } else {
-      const lastSupp = sqliteEngine.queryOne<{ max_id: number }>('SELECT MAX(id) as max_id FROM suppliers');
-      let nextCode = `SUP-${String(1001 + (lastSupp?.max_id || 0)).padStart(4, '0')}`;
-      const existing = sqliteEngine.queryOne('SELECT id FROM suppliers WHERE supplier_code = ?', [nextCode]);
-      if (existing) {
-        nextCode = `SUP-${Date.now().toString().slice(-6)}`;
+      let finalCode = inputCode || `SUP-${Math.floor(1000 + Math.random() * 9000)}`;
+      let attempt = 1;
+      while (sqliteEngine.queryOne('SELECT id FROM suppliers WHERE supplier_code = ?', [finalCode])) {
+        finalCode = `SUP-${Math.floor(1000 + Math.random() * 9000)}-${attempt++}`;
       }
 
       const res = sqliteEngine.run(
@@ -1303,12 +1561,12 @@ export const dbService = {
           state, gstin, licence_no, credit_limit, opening_balance, current_balance, active, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`,
         [
-          nextCode, cleanName, cleanCompany, supp.contact_person || '', cleanMobile, supp.email || '',
+          finalCode, cleanName, cleanCompany, supp.contact_person || '', cleanMobile, supp.email || '',
           supp.address || '', supp.city || 'पुणे', supp.state || 'Maharashtra', cleanGstin,
-          supp.licence_no || '', supp.credit_limit || 500000, Number(supp.opening_balance) || 0, Number(supp.opening_balance) || 0
+          supp.licence_no || '', creditLimit, openingBal, openingBal
         ]
       );
-      this.logAudit(userName, 'CREATE', 'Supplier', String(res.lastInsertRowid), `Created supplier ${cleanName}`);
+      this.logAudit(userName, 'CREATE', 'Supplier', String(res.lastInsertRowid), `Created supplier ${cleanName} (${finalCode})`);
       return res.lastInsertRowid;
     }
   },

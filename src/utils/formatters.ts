@@ -180,3 +180,42 @@ export function numberToWords(amount: number | null | undefined): string {
 
   return words.trim() + ' Only';
 }
+
+export function safeNumber(val: any, fallback = 0): number {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'number') return isNaN(val) ? fallback : val;
+  let str = String(val).trim();
+  str = str.replace(/^(rs\.?|inr|₹)\s*/i, '').replace(/,/g, '');
+  const match = str.match(/[-+]?[0-9]*\.?[0-9]+/);
+  if (!match) return fallback;
+  const n = parseFloat(match[0]);
+  return isNaN(n) ? fallback : n;
+}
+
+export function parseExcelDate(val: any, fallback = '2028-12-31'): string {
+  if (!val) return fallback;
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val.toISOString().slice(0, 10);
+  }
+  if (typeof val === 'number') {
+    // Excel date serial number (e.g. 46685)
+    const jsDate = new Date(Math.round((val - 25569) * 86400 * 1000));
+    if (!isNaN(jsDate.getTime())) {
+      return jsDate.toISOString().slice(0, 10);
+    }
+  }
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(s)) {
+    const parts = s.split(/[-/]/);
+    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+  }
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(s)) {
+    return s.replace(/\//g, '-');
+  }
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return fallback;
+}

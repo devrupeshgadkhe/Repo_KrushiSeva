@@ -15,19 +15,27 @@ export interface User {
 
 export type ProductCategory = 
   | 'Fertilizer'
+  | 'Fertilizers'
   | 'Seed'
+  | 'Seeds'
   | 'Insecticide'
   | 'Fungicide'
   | 'Herbicide'
   | 'Pesticide'
+  | 'Pesticides'
   | 'Micronutrient'
+  | 'Micronutrients'
   | 'Bio-fertilizer'
+  | 'Bio Fertilizers'
   | 'Bio-pesticide'
   | 'Plant Growth Regulator'
+  | 'PGR'
   | 'Growth Promoter'
   | 'Organic Input'
+  | 'Sprayers & Tools'
   | 'Farm Equipment'
-  | 'Other';
+  | 'Other'
+  | string;
 
 export interface Category {
   id: number;
@@ -88,6 +96,9 @@ export interface Product {
   toxicity_color?: string;
   description?: string;
   active: boolean;
+  opening_stock?: number;
+  batch_number?: string;
+  expiry_date?: string;
   // Specific agricultural fields
   fertilizer_grade?: string; // e.g. 10:26:26, 18:46:0
   npk_ratio?: string;

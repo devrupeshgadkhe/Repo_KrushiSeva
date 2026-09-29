@@ -58,6 +58,7 @@ export interface BackupStatusSummary {
   retention_days: number;
   interval_hours: number;
   configured_account: string;
+  client_id?: string;
   is_configured: boolean;
   folder_id: string | null;
 }
@@ -209,10 +210,55 @@ class GoogleDriveBackupService {
   }
 
   /**
-   * Resolves or automatically creates the dedicated backup folder in Google Drive.
+   * Derives or loads a stable, persistent client installation identifier (e.g. KSE-000001).
+   * Does NOT alter the database schema.
+   */
+  public getClientIdentifier(backupJson?: StructuredDatabaseBackup): string {
+    if (process.env.CLIENT_ID && process.env.CLIENT_ID.trim()) {
+      return process.env.CLIENT_ID.trim();
+    }
+
+    const idPath = path.resolve(process.cwd(), 'data', 'client_id.txt');
+    try {
+      if (fs.existsSync(idPath)) {
+        const stored = fs.readFileSync(idPath, 'utf8').trim();
+        if (stored) return stored;
+      }
+    } catch {}
+
+    // Derive stable identifier from business settings or generate a persistent unique ID
+    let derived = '';
+    const businessRows = backupJson?.tables?.['business_settings'];
+    if (Array.isArray(businessRows) && businessRows.length > 0) {
+      const setting = businessRows[0];
+      const seed = setting.gstin || setting.mobile || setting.shop_name || '';
+      if (seed) {
+        let hash = 0;
+        for (let i = 0; i < seed.length; i++) {
+          hash = (hash << 5) - hash + seed.charCodeAt(i);
+          hash |= 0;
+        }
+        derived = `KSE-${String(Math.abs(hash) % 900000 + 100001).padStart(6, '0')}`;
+      }
+    }
+
+    if (!derived) {
+      derived = `KSE-${Math.floor(100000 + Math.random() * 900000)}`;
+    }
+
+    try {
+      this.ensureDataDirectories();
+      fs.writeFileSync(idPath, derived, 'utf8');
+    } catch {}
+
+    return derived;
+  }
+
+  /**
+   * Resolves or automatically creates the dedicated company backup folder in Google Drive.
    */
   private async getOrCreateBackupFolder(drive: ReturnType<typeof google.drive>): Promise<string> {
-    // 1. If explicit folder ID provided in environment, verify existence
+    // 1. If explicit root folder ID provided in environment, verify existence
     const explicitFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     if (explicitFolderId && explicitFolderId.trim()) {
       return explicitFolderId.trim();
@@ -225,6 +271,8 @@ class GoogleDriveBackupService {
       q: `mimeType = 'application/vnd.google-apps.folder' and name = '${folderName}' and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     });
 
     if (searchRes.data.files && searchRes.data.files.length > 0) {
@@ -232,18 +280,54 @@ class GoogleDriveBackupService {
     }
 
     // 3. Create folder automatically if it doesn't already exist
-    console.log(`[GoogleDriveBackup] Creating dedicated backup folder "${folderName}" in Google Drive...`);
+    console.log(`[GoogleDriveBackup] Creating company backup folder "${folderName}" in Google Drive...`);
     const createRes = await drive.files.create({
+      supportsAllDrives: true,
       requestBody: {
         name: folderName,
         mimeType: 'application/vnd.google-apps.folder',
-        description: 'Automated SQLite database backups for Krushi Seva ERP',
+        description: 'Automated SQLite database company backups for Krushi Seva ERP',
       },
       fields: 'id',
     });
 
     if (!createRes.data.id) {
       throw new Error('Failed to create backup folder in Google Drive');
+    }
+
+    return createRes.data.id;
+  }
+
+  /**
+   * Resolves or creates a client-specific subfolder (e.g. Krushi_Seva_ERP_Backups/KSE-000001)
+   */
+  private async getOrCreateClientFolder(drive: ReturnType<typeof google.drive>, rootFolderId: string, clientId: string): Promise<string> {
+    const searchRes = await drive.files.list({
+      q: `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${clientId}' and trashed = false`,
+      fields: 'files(id, name)',
+      spaces: 'drive',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+
+    if (searchRes.data.files && searchRes.data.files.length > 0) {
+      return searchRes.data.files[0].id!;
+    }
+
+    console.log(`[GoogleDriveBackup] Creating client subfolder "${clientId}" inside company backup folder...`);
+    const createRes = await drive.files.create({
+      supportsAllDrives: true,
+      requestBody: {
+        name: clientId,
+        parents: [rootFolderId],
+        mimeType: 'application/vnd.google-apps.folder',
+        description: `Dedicated backup subfolder for client ${clientId}`,
+      },
+      fields: 'id',
+    });
+
+    if (!createRes.data.id) {
+      throw new Error(`Failed to create client backup folder ${clientId} in Google Drive`);
     }
 
     return createRes.data.id;
