@@ -87,10 +87,10 @@ class CloudBackupService {
     if (this.initialized) return;
     this.initialized = true;
 
-    // Automatic check 12 seconds after startup to ensure smooth initial loading
+    // Automatic check immediately on startup (1.5 seconds)
     setTimeout(() => {
-      this.triggerBackup(false).catch(console.warn);
-    }, 12000);
+      this.triggerBackup(true).catch(console.warn);
+    }, 1500);
 
     // Periodic automatic backup every 2 hours
     this.intervalTimer = setInterval(() => {
@@ -101,8 +101,8 @@ class CloudBackupService {
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
         setTimeout(() => {
-          this.triggerBackup(false).catch(console.warn);
-        }, 5000);
+          this.triggerBackup(true).catch(console.warn);
+        }, 2000);
       });
     }
   }
@@ -218,6 +218,14 @@ class CloudBackupService {
           console.warn('Web cloud backup transmission issue:', fetchErr);
           message = fetchErr?.message || 'Cloud backup transmission failed';
         }
+      }
+
+      // 5. Trigger backend server backup (local disk file + company Google Drive)
+      try {
+        await fetch('/api/backup/run', { method: 'POST' });
+        localSaved = true;
+      } catch {
+        // Backend offline or standalone web
       }
 
       this.state.status = (localSaved || cloudSaved) ? 'success' : 'failed';

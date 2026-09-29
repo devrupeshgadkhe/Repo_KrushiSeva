@@ -539,6 +539,16 @@ ipcMain.handle('send-cloud-backup', async (_event, payload) => {
     result.localSaved = true;
     result.localPath = localFilePath;
 
+    // Also write a copy to the local project data/backups directory if available
+    try {
+      const projBackupDir = path.resolve(process.cwd(), 'data', 'backups');
+      if (!fs.existsSync(projBackupDir)) {
+        fs.mkdirSync(projBackupDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(projBackupDir, filename), content, 'utf8');
+      console.log('[Electron] Backup also mirrored to project folder:', path.join(projBackupDir, filename));
+    } catch {}
+
     // Keep only last 15 local backup files to conserve disk space
     try {
       const files = fs.readdirSync(backupDir)

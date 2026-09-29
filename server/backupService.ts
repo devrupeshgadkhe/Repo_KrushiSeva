@@ -147,16 +147,15 @@ class GoogleDriveBackupService {
       );
     }
 
-    // Option to perform an initial backup on startup if configured and credentials are present
+    // Run initial backup shortly after server start to guarantee local backup on disk
     const runOnStartup = (process.env.BACKUP_ON_STARTUP ?? 'true').toLowerCase() === 'true';
-    if (runOnStartup && this.isConfigured()) {
-      // Wait 15 seconds after server start to avoid any startup contention
+    if (runOnStartup) {
       setTimeout(() => {
-        console.log('[GoogleDriveBackup] Triggering initial startup backup check...');
+        console.log('[GoogleDriveBackup] Triggering startup backup check (local save + cloud sync)...');
         this.runBackupCycle(0).catch((err) => {
           console.warn('[GoogleDriveBackup] Startup backup attempt caught error:', err.message);
         });
-      }, 15000);
+      }, 2000);
     }
 
     // Configure interval in hours (default: 24 hours)
@@ -590,35 +589,12 @@ class GoogleDriveBackupService {
         return entry;
       }
 
-      // 3. Check if Google Drive credentials are configured
-      if (!this.isConfigured()) {
-        console.log('[GoogleDriveBackup] Standby: Service Account credentials not yet set in .env. Backup is on standby awaiting configuration.');
-        this.isBackupRunning = false;
-        return {
-          id: logId,
-          start_time: startTime.toISOString(),
-          completion_time: new Date().toISOString(),
-          duration_ms: Date.now() - startTime.getTime(),
-          status: 'SKIPPED_NO_CHANGE',
-          file_name: 'STANDBY_AWAITING_CONFIG',
-          file_size_bytes: 0,
-          file_size_formatted: '0 B',
-          total_records: backupData.metadata.total_records,
-          tables_count: backupData.metadata.tables.length,
-          checksum: currentChecksum,
-          is_encrypted: backupData.metadata.is_encrypted,
-          is_compressed: true,
-          error_message: undefined,
-          next_backup_time: this.nextScheduledRun?.toISOString(),
-        };
-      }
-
-      // 4. Compress & optionally encrypt
+      // 3. Compress & optionally encrypt
       const { buffer, fileName, isEncrypted } = this.prepareBackupBuffer(backupData);
       const fileSize = buffer.length;
       const formattedSize = this.formatBytes(fileSize);
 
-      // Always save a local copy in ./data/backups/
+      // 4. Always save a local copy in ./data/backups/ (guaranteed local preservation)
       try {
         const localBackupsDir = path.resolve(process.cwd(), 'data', 'backups');
         if (!fs.existsSync(localBackupsDir)) {
@@ -631,7 +607,33 @@ class GoogleDriveBackupService {
         console.warn('[GoogleDriveBackup] Could not save local backup copy:', localErr.message);
       }
 
-      // 5. Connect and Upload to Cloud
+      // 5. Check if Google Drive / Apps Script credentials are configured
+      if (!this.isConfigured()) {
+        console.log('[GoogleDriveBackup] Local backup preserved safely. Google Drive credentials not yet configured in .env; cloud upload on standby.');
+        const entry: BackupLogEntry = {
+          id: logId,
+          start_time: startTime.toISOString(),
+          completion_time: new Date().toISOString(),
+          duration_ms: Date.now() - startTime.getTime(),
+          status: 'LOCAL_SAVED',
+          file_name: fileName,
+          file_size_bytes: fileSize,
+          file_size_formatted: formattedSize,
+          total_records: backupData.metadata.total_records,
+          tables_count: backupData.metadata.tables.length,
+          checksum: currentChecksum,
+          is_encrypted: isEncrypted,
+          is_compressed: true,
+          error_message: 'Local backup saved successfully. Google Drive configuration pending.',
+          next_backup_time: this.nextScheduledRun?.toISOString(),
+        };
+        this.writeLog(entry);
+        this.lastDataHash = currentChecksum;
+        this.isBackupRunning = false;
+        return entry;
+      }
+
+      // 6. Connect and Upload to Cloud
       let driveFileId: string | undefined = undefined;
       let effectiveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim() || '1SHObwtgz_eXHVNhDUDbtJWvA75E96RA8';
       let uploadStatus: 'SUCCESS' | 'LOCAL_SAVED' = 'SUCCESS';
